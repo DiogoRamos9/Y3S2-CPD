@@ -31,7 +31,32 @@ def OnMult(m_ar, m_br):
     
 
 def OnMultLine(m_ar, m_br):
-    return 0
+    # Initialize matrices
+    pha = [1.0] * (m_ar * m_ar)
+    phb = [(i + 1) for i in range(m_br) for _ in range(m_br)]
+    phc = [0.0] * (m_ar * m_ar)
+
+    # Start timing
+    start_time = time.time()
+
+    for i in range (m_ar):
+        for k in range (m_br):
+            for j in range (m_br):
+                phc[i*m_ar+j] += int(pha[i*m_ar+k]*phb[k*m_br+j])
+
+    # End timing
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Time: {elapsed_time:.3f} seconds")
+
+    # Display 10 elements of the result matrix to verify correctness
+    print("Result matrix:")
+    for i in range(1):
+        for j in range(min(10, m_br)):
+            print(phc[j], end=" ")
+    print()
+    
+
 
 def OnMultBlock(m_ar, m_br, blockSize):
     # Initialize matrices
