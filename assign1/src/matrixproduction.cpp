@@ -148,6 +148,11 @@ void OnMultBlock(int m_ar, int m_br, int bkSize)
 	phb = (double *)malloc((m_ar * m_ar) * sizeof(double));
 	phc = (double *)malloc((m_ar * m_ar) * sizeof(double));
 
+    // Initialize result matrix to zero
+    for(i=0; i<m_ar; i++)
+        for(j=0; j<m_ar; j++)
+            phc[i*m_ar + j] = 0.0;
+
 	// Matrix A is just 1's
 	for(i=0; i<m_ar; i++)
 		for(j=0; j<m_ar; j++)
