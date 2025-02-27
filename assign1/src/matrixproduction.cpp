@@ -166,21 +166,22 @@ void OnMultBlock(int m_ar, int m_br, int bkSize)
 	Time1 = clock();
 
 	// Block Multiplication
+	// Block Multiplication
 	for (i0 = 0; i0 < m_ar; i0 += bkSize) {
-		for (j0 = 0; j0 < m_br; j0 += bkSize) {
-			for (k0 = 0; k0 < m_ar; k0 += bkSize) {
+		for (k0 = 0; k0 < m_ar; k0 += bkSize) {
+			for (j0 = 0; j0 < m_br; j0 += bkSize)  {
 				for (i = i0; i < min(i0 + bkSize, m_ar); i++) {
-					for (j = j0; j < min(j0 + bkSize, m_br); j++) {
-						temp = 0;
-						for (k = k0; k < min(k0 + bkSize, m_ar); k++) {
-							temp += pha[i * m_ar + k] * phb[k * m_br + j];
+					for (k = k0; k < min(k0 + bkSize, m_ar); k++) {
+						for (j = j0; j < min(j0 + bkSize, m_br); j++) {
+							phc[i * m_ar + j] += pha[i * m_ar + k] * phb[k * m_br + j];
 						}
-						phc[i * m_ar + j] += temp;
+						
 					}
 				}
 			}
 		}
 	}
+
 
 	Time2 = clock();
 	sprintf(st, "Time: %3.3f seconds\n", (double)(Time2 - Time1) / CLOCKS_PER_SEC);
