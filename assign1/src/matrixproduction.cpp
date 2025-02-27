@@ -3,7 +3,7 @@
 #include <iomanip>
 #include <time.h>
 #include <cstdlib>
-//#include <papi.h>
+#include <papi.h>
 
 using namespace std;
 
@@ -202,7 +202,7 @@ void OnMultBlock(int m_ar, int m_br, int bkSize)
 
 
 
-/* void handle_error (int retval)
+void handle_error (int retval)
 {
   printf("PAPI error %d: %s\n", retval, PAPI_strerror(retval));
   exit(1);
@@ -220,11 +220,11 @@ void init_papi() {
             << " MINOR: " << PAPI_VERSION_MINOR(retval)
             << " REVISION: " << PAPI_VERSION_REVISION(retval) << "\n";
 }
- */
+ 
 
 int main (int argc, char *argv[])
 {		
-	/*
+	
 	int EventSet = PAPI_NULL;
   	long long values[2];
   	int ret;
@@ -244,7 +244,7 @@ int main (int argc, char *argv[])
 
 
 	ret = PAPI_add_event(EventSet,PAPI_L2_DCM);
-	if (ret != PAPI_OK) cout << "ERROR: PAPI_L2_DCM" << endl; */
+	if (ret != PAPI_OK) cout << "ERROR: PAPI_L2_DCM" << endl; 
 	char c;
 	int lin, col, blockSize;
 	int op;
@@ -263,8 +263,8 @@ int main (int argc, char *argv[])
 
 
 		// Start counting
-		// ret = PAPI_start(EventSet);
-		// if (ret != PAPI_OK) cout << "ERROR: Start PAPI" << endl;
+		ret = PAPI_start(EventSet);
+		if (ret != PAPI_OK) cout << "ERROR: Start PAPI" << endl;
 
 		switch (op){
 			case 1: 
@@ -281,7 +281,7 @@ int main (int argc, char *argv[])
 
 		}
 
-  		/*ret = PAPI_stop(EventSet, values);
+  		ret = PAPI_stop(EventSet, values);
   		if (ret != PAPI_OK) cout << "ERROR: Stop PAPI" << endl;
   		printf("L1 DCM: %lld \n",values[0]);
   		printf("L2 DCM: %lld \n",values[1]);
@@ -289,14 +289,14 @@ int main (int argc, char *argv[])
 		ret = PAPI_reset( EventSet );
 		if ( ret != PAPI_OK )
 			std::cout << "FAIL reset" << endl;
-			*/
+			
 
 
 
 	}
 	while (op != 0);
 
-	/*ret = PAPI_remove_event( EventSet, PAPI_L1_DCM );
+	ret = PAPI_remove_event( EventSet, PAPI_L1_DCM );
 	if ( ret != PAPI_OK )
 		std::cout << "FAIL remove event" << endl; 
 
@@ -306,6 +306,6 @@ int main (int argc, char *argv[])
 
 	ret = PAPI_destroy_eventset( &EventSet );
 	if ( ret != PAPI_OK )
-		std::cout << "FAIL destroy" << endl;*/
+		std::cout << "FAIL destroy" << endl;
 
 }
