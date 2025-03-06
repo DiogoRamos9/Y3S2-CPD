@@ -4,6 +4,7 @@
 #include <time.h>
 #include <cstdlib>
 #include <papi.h>
+#include <omp.h>
 
 using namespace std;
 
@@ -70,7 +71,7 @@ void OnMult(int m_ar, int m_br)
 	
 }
 
-// add code here for line x line matriz multiplication
+// Line Multiplication Code
 void OnMultLine(int m_ar, int m_br)
 {
     SYSTEMTIME Time1, Time2;
@@ -132,7 +133,7 @@ void OnMultLine(int m_ar, int m_br)
     free(phc);
 }
 
-// add code here for block x block matriz multiplication
+// Block Multiplication Code
 void OnMultBlock(int m_ar, int m_br, int bkSize)
 {
 	SYSTEMTIME Time1, Time2;
@@ -201,8 +202,76 @@ void OnMultBlock(int m_ar, int m_br, int bkSize)
     
 }
 
+void OnMultLineParallel(int m_ar, int m_br)
+{
+    double Time1, Time2;
+    
+    char st[100];
+    double temp;
+    int i, j, k;
+
+    double *pha, *phb, *phc;
+    
+    pha = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phb = (double *)malloc((m_ar * m_ar) * sizeof(double));
+    phc = (double *)malloc((m_ar * m_ar) * sizeof(double));
+
+    // Initialize result matrix to zero
+    for(i=0; i<m_ar; i++)
+        for(j=0; j<m_ar; j++)
+            phc[i*m_ar + j] = 0.0;
+
+    // Matrix A is just 1's
+    for(i=0; i<m_ar; i++)
+        for(j=0; j<m_ar; j++)
+            pha[i*m_ar + j] = (double)1.0;
+
+    // Matrix B is a matrix with each cell being the value of the corresponding line (starting by 1)
+    for(i=0; i<m_br; i++)
+        for(j=0; j<m_br; j++)
+            phb[i*m_br + j] = (double)(i+1);
+
+    Time1 = omp_get_wtime();
+
+    // Line Multiplication
+	# pragma omp parallel for private(j, k)
+    for(i=0; i<m_ar; i++)
+    {   
+        for(k=0; k<m_ar; k++)
+        {
+            for(j=0; j<m_br; j++)
+            {   
+                phc[i*m_ar+j] += pha[i*m_ar+k] * phb[k*m_br+j];
+            }
+        }
+    }
+
+    Time2 = omp_get_wtime();
+	
+    sprintf(st, "Time: %3.3f seconds\n", (double)(Time2 - Time1) );
+    cout << st;
+
+    
+    cout << "Result matrix: " << endl;
+    for(i=0; i<1; i++)
+    {   
+        for(j=0; j<min(10,m_br); j++)
+            cout << phc[j] << " ";
+    }
+    cout << endl;
+
+    free(pha);
+    free(phb);
+    free(phc);
+}
+
+void OnMultLineParallelV2(int m_ar, int m_br)
+{
+    //return 0;
+}
 
 
+/*
 void handle_error (int retval)
 {
   printf("PAPI error %d: %s\n", retval, PAPI_strerror(retval));
@@ -221,16 +290,16 @@ void init_papi() {
             << " MINOR: " << PAPI_VERSION_MINOR(retval)
             << " REVISION: " << PAPI_VERSION_REVISION(retval) << "\n";
 }
- 
+*/ 
 
 int main (int argc, char *argv[])
 {		
 	
-	int EventSet = PAPI_NULL;
+	//int EventSet = PAPI_NULL;
   	long long values[2];
   	int ret;
 	
-
+	/*
 	ret = PAPI_library_init( PAPI_VER_CURRENT );
 	if ( ret != PAPI_VER_CURRENT )
 		std::cout << "FAIL" << endl;
@@ -246,6 +315,7 @@ int main (int argc, char *argv[])
 
 	ret = PAPI_add_event(EventSet,PAPI_L2_DCM);
 	if (ret != PAPI_OK) cout << "ERROR: PAPI_L2_DCM" << endl; 
+	*/
 	char c;
 	int lin, col, blockSize;
 	int op;
@@ -254,6 +324,9 @@ int main (int argc, char *argv[])
 		cout << endl << "1. Multiplication" << endl;
 		cout << "2. Line Multiplication" << endl;
 		cout << "3. Block Multiplication" << endl;
+		cout << "4. Line Multiplication Parallel V1" << endl;
+		cout << "5. Line Multiplication Parallel V2" << endl;
+		cout << "0. Exit" << endl;
 		cout << "Selection?: ";
 		cin >>op;
 		if (op == 0)
@@ -264,8 +337,8 @@ int main (int argc, char *argv[])
 
 
 		// Start counting
-		ret = PAPI_start(EventSet);
-		if (ret != PAPI_OK) cout << "ERROR: Start PAPI" << endl;
+		//ret = PAPI_start(EventSet);
+		//if (ret != PAPI_OK) cout << "ERROR: Start PAPI" << endl;
 
 		switch (op){
 			case 1: 
@@ -279,9 +352,15 @@ int main (int argc, char *argv[])
 				cin >> blockSize;
 				OnMultBlock(lin, col, blockSize);  
 				break;
+			case 4:
+				OnMultLineParallel(lin, col);
+				break;
+			case 5:
+				OnMultLineParallelV2(lin, col);
+				break;
 
 		}
-
+		/*
   		ret = PAPI_stop(EventSet, values);
   		if (ret != PAPI_OK) cout << "ERROR: Stop PAPI" << endl;
   		printf("L1 DCM: %lld \n",values[0]);
@@ -290,13 +369,13 @@ int main (int argc, char *argv[])
 		ret = PAPI_reset( EventSet );
 		if ( ret != PAPI_OK )
 			std::cout << "FAIL reset" << endl;
-			
+		*/
 
 
 
 	}
 	while (op != 0);
-
+	/*
 	ret = PAPI_remove_event( EventSet, PAPI_L1_DCM );
 	if ( ret != PAPI_OK )
 		std::cout << "FAIL remove event" << endl; 
@@ -308,5 +387,5 @@ int main (int argc, char *argv[])
 	ret = PAPI_destroy_eventset( &EventSet );
 	if ( ret != PAPI_OK )
 		std::cout << "FAIL destroy" << endl;
-
+	*/
 }
