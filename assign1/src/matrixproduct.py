@@ -2,9 +2,9 @@ import time
 
 def OnMult(m_ar, m_br):
     # Initialize matrices
-    pha = [1.0] * (m_ar * m_ar)
+    pha = [1] * (m_ar * m_ar)
     phb = [(i + 1) for i in range(m_br) for _ in range(m_br)]
-    phc = [0.0] * (m_ar * m_ar)
+    phc = [0] * (m_ar * m_ar)
 
     # Start timing
     start_time = time.time()
@@ -12,10 +12,10 @@ def OnMult(m_ar, m_br):
     # Matrix multiplication
     for i in range(m_ar):
         for j in range(m_br):
-            temp = 0.0
+            temp = 0
             for k in range(m_ar):
                 temp += pha[i * m_ar + k] * phb[k * m_br + j]
-            phc[i * m_ar + j] = int(temp)
+            phc[i * m_ar + j] = temp
 
     # End timing
     end_time = time.time()
@@ -32,17 +32,18 @@ def OnMult(m_ar, m_br):
 
 def OnMultLine(m_ar, m_br):
     # Initialize matrices
-    pha = [1.0] * (m_ar * m_ar)
+    pha = [1] * (m_ar * m_ar)
     phb = [(i + 1) for i in range(m_br) for _ in range(m_br)]
-    phc = [0.0] * (m_ar * m_ar)
+    phc = [0] * (m_ar * m_ar)
 
     # Start timing
     start_time = time.time()
 
-    for i in range (m_ar):
-        for k in range (m_br):
-            for j in range (m_br):
-                phc[i*m_ar+j] += int(pha[i*m_ar+k]*phb[k*m_br+j])
+    for i in range(m_ar):
+        for k in range(m_ar):
+            temp = pha[i * m_ar + k]
+            for j in range(m_br):
+                phc[i * m_ar + j] += temp * phb[k * m_br + j]
 
     # End timing
     end_time = time.time()
@@ -60,7 +61,7 @@ def OnMultLine(m_ar, m_br):
 
 def OnMultBlock(m_ar, m_br, blockSize):
     # Initialize matrices
-    pha = [1.0] * (m_ar * m_ar)
+    pha = [1] * (m_ar * m_ar)
     phb = [(i + 1) for i in range(m_br) for _ in range(m_br)]
     phc = [0] * (m_ar * m_ar)
 
@@ -69,14 +70,13 @@ def OnMultBlock(m_ar, m_br, blockSize):
 
     # Block Multiplication
     for i0 in range(0, m_ar, blockSize):
-        for j0 in range(0, m_br, blockSize):
-            for k0 in range(0, m_ar, blockSize):
+        for k0 in range(0, m_ar, blockSize):
+            for j0 in range(0, m_br, blockSize):
                 for i in range(i0, min(i0 + blockSize, m_ar)):
-                    for j in range(j0, min(j0 + blockSize, m_br)):
-                        temp = 0.0
-                        for k in range(k0, min(k0 + blockSize, m_ar)):
-                            temp += pha[i * m_ar + k] * phb[k * m_br + j]
-                        phc[i * m_ar + j] += temp
+                    for k in range(k0, min(k0 + blockSize, m_ar)):
+                        for j in range(j0, min(j0 + blockSize, m_br)):
+                            phc[i * m_ar + j] +=  pha[i * m_ar + k] * phb[k * m_br + j]
+                        
 
     # End timing
     end_time = time.time()
