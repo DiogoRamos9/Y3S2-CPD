@@ -297,7 +297,7 @@ void OnMultLineParallelV2(int m_ar, int m_br)
     Time1 = omp_get_wtime();
 
     // Line Multiplication
-	# pragma omp parallel
+	# pragma omp parallel private(i,k)
     for(i=0; i<m_ar; i++)
     {   
         for(k=0; k<m_ar; k++)
