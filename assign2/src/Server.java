@@ -15,6 +15,10 @@ public class Server {
                 // Handle client connection in a separate thread to allow multiple clients
                 // to connect simultaneously and to avoid blocking the main thread.
                 new Thread(() -> handleClient(clientSocket)).start();
+
+                if (clientSocket.isClosed() || !clientSocket.isConnected()) {
+                    System.out.println("Client disconnected: " + clientSocket.getInetAddress());
+                }
             }
         } catch (IOException e) {
             e.printStackTrace();
