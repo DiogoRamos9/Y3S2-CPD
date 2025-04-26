@@ -3,7 +3,7 @@ import java.io.*;
 
 public class Client {
     private static final int PORT = 8080;
-    private static final String HOST = "localhost";
+    private static final String HOST = "127.0.0.1";
     private static Socket socket;
     private static boolean running = true;
     private static BufferedReader in;
@@ -61,7 +61,7 @@ public class Client {
     private static void handleCommand(String command) {
         switch (command) {
             case "/exit":
-                out.println("Client disconnected: " + socket.getInetAddress());
+                out.println("Client disconnected.");
                 running = false;
                 break;
             case "/help":

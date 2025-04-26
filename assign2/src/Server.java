@@ -1,12 +1,15 @@
 import java.net.*;
 import java.io.*;
+import java.util.*;
 
 public class Server {
     private static final int PORT = 8080;
-    private static final String HOST = "localhost";
+    private static final String HOST = "0.0.0.0"; // Accept connections from any IP address
+    private static ServerSocket serverSocket;
 
     public static void main(String[] args) {
-        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+        try {
+            serverSocket = new ServerSocket(PORT);
             System.out.println("Server started on " + HOST + ":" + PORT);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
@@ -22,6 +25,14 @@ public class Server {
             }
         } catch (IOException e) {
             e.printStackTrace();
+        } finally {
+            try {
+                if (serverSocket != null && !serverSocket.isClosed()) {
+                    serverSocket.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
