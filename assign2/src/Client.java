@@ -10,41 +10,46 @@ public class Client {
     private static PrintWriter out;
 
     public static void main(String[] args) {
+        authenticateUser();
+    
         try {
             socket = new Socket(HOST, PORT);
             System.out.println("Connected to server at " + HOST + ":" + PORT);
-
-            while (running && socket.isConnected() && !socket.isClosed()) {
-                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                out = new PrintWriter(socket.getOutputStream(), true);
-
-                // Read welcome message from server
-                String welcomeMessage = in.readLine();
-                System.out.println("Server: " + welcomeMessage);
-
-                // Create a reader for user input
-                BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
-
-                while (true) {
-                    // Prompt user for input
-                    System.out.print("You: ");
-                    String message = userInput.readLine();
-
-                    // Check if user wrote a command
-                    if (message.charAt(0) == '/') {
-                        handleCommand(message);
-                        if (!running) {
-                            break;
-                        }
+    
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            out = new PrintWriter(socket.getOutputStream(), true);
+    
+            // Thread to listen for messages from the server
+            Thread serverListener = new Thread(() -> {
+                try {
+                    String serverMessage;
+                    while ((serverMessage = in.readLine()) != null) {
+                        System.out.println("\nServer: " + serverMessage);
+                        System.out.print("You: ");
                     }
-
-                    // Send message to server
-                    out.println(message);
+                } catch (IOException e) {}
+            });
+            serverListener.start();
+    
+            BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
+            while (running && socket.isConnected() && !socket.isClosed()) {
+                System.out.print("You: ");
+                String message = userInput.readLine();
+    
+                if (message.charAt(0) == '/') {
+                    handleCommand(message);
+                    if (!running) {
+                        break;
+                    }
                 }
-
-                socket.close();
-                System.out.println("Disconnected from server.");
+    
+                out.println(message);
+    
+                System.out.println("You: " + message);
             }
+    
+            socket.close();
+            System.out.println("Disconnected from server.");
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
@@ -72,5 +77,34 @@ public class Client {
             default:
                 System.out.println("Unknown command: " + command);
         }
+    }
+
+    private static void authenticateUser() {
+        boolean authenticated = false;
+        do {
+            System.out.println("1 - Login \n2 - Register");
+            String choice = System.console().readLine();
+            switch (choice) {
+                case "1":
+                    if (User.loginUser() != 0) {
+                        continue;
+                    } else {
+                        System.out.println("Login successful!");
+                        authenticated = true;
+                    }
+                    break;
+                case "2":
+                    if (User.registerUser() != 0) {
+                        System.out.println("Registration failed. Please try again.");
+                    } else {
+                        System.out.println("Registration successful!");
+                        authenticated = true;
+                    }
+                    break;
+                default:
+                    System.out.println("Invalid option. Please try again.");
+                    break;
+            }
+        } while (!authenticated);
     }
 }
