@@ -8,6 +8,7 @@ public class Client {
     private static boolean running = true;
     private static BufferedReader in;
     private static PrintWriter out;
+    private static User user;
 
     public static void main(String[] args) {
         authenticateUser();
@@ -25,7 +26,7 @@ public class Client {
                     String serverMessage;
                     while ((serverMessage = in.readLine()) != null) {
                         System.out.println("\nServer: " + serverMessage);
-                        System.out.print("You: ");
+                        System.out.print(user.getUsername() + ": ");
                     }
                 } catch (IOException e) {}
             });
@@ -33,7 +34,7 @@ public class Client {
     
             BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
             while (running && socket.isConnected() && !socket.isClosed()) {
-                System.out.print("You: ");
+                System.out.print(user.getUsername() + ": ");
                 String message = userInput.readLine();
     
                 if (message.charAt(0) == '/') {
@@ -45,7 +46,7 @@ public class Client {
     
                 out.println(message);
     
-                System.out.println("You: " + message);
+                System.out.println(user.getUsername() + ": " + message);
             }
     
             socket.close();
@@ -86,7 +87,7 @@ public class Client {
             String choice = System.console().readLine();
             switch (choice) {
                 case "1":
-                    if (User.loginUser() != 0) {
+                    if ((user = User.loginUser()) == null) {
                         continue;
                     } else {
                         System.out.println("Login successful!");
@@ -94,7 +95,7 @@ public class Client {
                     }
                     break;
                 case "2":
-                    if (User.registerUser() != 0) {
+                    if ((user = User.registerUser()) == null) {
                         System.out.println("Registration failed. Please try again.");
                     } else {
                         System.out.println("Registration successful!");

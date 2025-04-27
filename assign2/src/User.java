@@ -17,7 +17,7 @@ public class User {
         return password;
     }
 
-    public static int loginUser() {
+    public static User loginUser() {
         System.out.println("Enter username: ");
         String username = System.console().readLine();
         for (User user : UserManager.users) {
@@ -25,24 +25,24 @@ public class User {
                 System.out.println("Enter password: ");
                 String password = System.console().readLine();
                 if (user.getPassword().equals(password)) {
-                    return 0;
+                    return user;
                 } else {
                     System.out.println("Incorrect password.");
-                    return 1;
+                    return null;
                 }
             }
         }
         System.out.println("User not found.");
-        return 1;
+        return null;
     }
 
-    public static int registerUser() {
+    public static User registerUser() {
         System.out.println("Enter username: ");
         String username = System.console().readLine();
         for (User user : UserManager.users) {
             if (user.getUsername().equals(username)) {
                 System.out.println("Username already exists.");
-                return 1;
+                return null;
             }
         }
         System.out.println("Enter password: ");
@@ -54,6 +54,8 @@ public class User {
         } catch (IOException e) {
             e.printStackTrace();
         }
-        return 0;
+
+        User user = new User(username, password);
+        return user;
     }
 }
