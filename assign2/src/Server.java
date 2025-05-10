@@ -55,7 +55,7 @@ public class Server {
             out.println("You are in the 'general' room by default.");
             out.println("Use /create <room_name>, /join <room_name>, or /leave to manage chat rooms.");
 
-            String currentRoom = "general"; // Default room
+            String currentRoom = "general"; // Sala default
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
                 if (inputLine.startsWith("/create ")) {
@@ -92,7 +92,8 @@ public class Server {
                     // Broadcast message to the current room
                     for (Socket socket : chatRooms.get(currentRoom).keySet()) {
                         if (!socket.equals(clientSocket)) {
-                            new PrintWriter(socket.getOutputStream(), true).println(username + ": " + inputLine);
+                            //ignora este erro, tentei arranjar e parou de dar entao não mexas :3
+                            new PrintWriter(socket.getOutputStream(), true).println(username + ": " + inputLine); 
                         }
                     }
                 }
