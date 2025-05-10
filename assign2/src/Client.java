@@ -20,6 +20,9 @@ public class Client {
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
     
+            // Envia o nome do client para o servidor
+            out.println(user.getUsername());
+    
             // Thread to listen for messages from the server
             Thread serverListener = new Thread(() -> {
                 try {
