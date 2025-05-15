@@ -70,7 +70,7 @@ public class Server {
                 chatRoomsLock.unlock();
             }
 
-            System.out.println(username + " has joined the server and the 'general' room.");
+            System.out.println(username + " has joined the server and the 'general' room.\n");
 
             out.println("Welcome to the server, " + username + "!");
             out.println("You are in the 'general' room by default.");
