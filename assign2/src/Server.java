@@ -31,7 +31,7 @@ public class Server {
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("Client connected: " + clientSocket.getInetAddress());
-                new Thread(() -> handleClient(clientSocket)).start();
+                Thread.startVirtualThread(() -> handleClient(clientSocket));
 
                 if (clientSocket.isClosed() || !clientSocket.isConnected()) {
                     System.out.println("Client disconnected: " + clientSocket.getInetAddress());
@@ -142,8 +142,18 @@ public class Server {
                     try {
                         for (Socket socket : chatRooms.get(currentRoom).keySet()) {
                             if (!socket.equals(clientSocket)) {
-                                new PrintWriter(socket.getOutputStream(), true)
-                                    .println(username + ": " + inputLine);
+
+                                final String msgUsername = username;
+                                final String msgInputLine = inputLine;
+                                Thread.startVirtualThread(() -> {
+                                    try {
+                                        new PrintWriter(socket.getOutputStream(), true)
+                                            .println(msgUsername + ": " + msgInputLine);
+                                    } catch (Exception e) {
+                                        System.out.println("Error sending message to " + socket.getInetAddress());
+                                        e.printStackTrace();
+                                    }
+                                });
                             }
                         }
                     } finally {
