@@ -1,27 +1,36 @@
 import java.net.*;
 import java.io.*;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Server {
     private static final int PORT = 8080;
-    private static final String HOST = "0.0.0.0"; // Accept connections from any IP address
+    private static final String HOST = "0.0.0.0";
     private static ServerSocket serverSocket;
-    private static ConcurrentHashMap<Socket, String> clientUsernames = new ConcurrentHashMap<>();
-    private static ConcurrentHashMap<String, ConcurrentHashMap<Socket, String>> chatRooms = new ConcurrentHashMap<>();
+
+    // Shared data structures
+    private static final Map<Socket, String> clientUsernames = new HashMap<>();
+    private static final Map<String, Map<Socket, String>> chatRooms = new HashMap<>();
+
+    private static final ReentrantLock clientUsernamesLock = new ReentrantLock();
+    private static final ReentrantLock chatRoomsLock = new ReentrantLock();
 
     public static void main(String[] args) {
         try {
-            // Initialize the default "general" chat room
-            chatRooms.put("general", new ConcurrentHashMap<>());
+ 
+            chatRoomsLock.lock();
+            try {
+                chatRooms.put("general", new HashMap<>());
+            } finally {
+                chatRoomsLock.unlock();
+            }
 
             serverSocket = new ServerSocket(PORT);
             System.out.println("Server started on " + HOST + ":" + PORT);
             while (true) {
                 Socket clientSocket = serverSocket.accept();
                 System.out.println("Client connected: " + clientSocket.getInetAddress());
-                
-                // Handle client connection in a separate thread to allow multiple clients
-                // to connect simultaneously and to avoid blocking the main thread.
                 new Thread(() -> handleClient(clientSocket)).start();
 
                 if (clientSocket.isClosed() || !clientSocket.isConnected()) {
@@ -45,56 +54,98 @@ public class Server {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
              PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
 
-            // Lê o username do client e o armazena no mapa
             String username = in.readLine();
-            clientUsernames.put(clientSocket, username);
-            chatRooms.get("general").put(clientSocket, username);
+
+            clientUsernamesLock.lock();
+            try {
+                clientUsernames.put(clientSocket, username);
+            } finally {
+                clientUsernamesLock.unlock();
+            }
+
+            chatRoomsLock.lock();
+            try {
+                chatRooms.get("general").put(clientSocket, username);
+            } finally {
+                chatRoomsLock.unlock();
+            }
+
             System.out.println(username + " has joined the server and the 'general' room.");
 
             out.println("Welcome to the server, " + username + "!");
             out.println("You are in the 'general' room by default.");
-            out.println("Use /create <room_name>, /join <room_name>, or /leave to manage chat rooms.");
+            out.println("Use /create <room_name>, /join <room_name>, /leave to manage chat rooms and /list .");
 
-            String currentRoom = "general"; // Sala default
+            String currentRoom = "general";
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
                 if (inputLine.startsWith("/create ")) {
                     String roomName = inputLine.substring(8).trim();
-                    if (chatRooms.containsKey(roomName)) {
-                        out.println("Chat room already exists.");
-                    } else {
-                        chatRooms.put(roomName, new ConcurrentHashMap<>());
-                        out.println("Chat room '" + roomName + "' created.");
+                    chatRoomsLock.lock();
+                    try {
+                        if (chatRooms.containsKey(roomName)) {
+                            out.println("Chat room already exists.");
+                        } else {
+                            chatRooms.put(roomName, new HashMap<>());
+                            out.println("Chat room '" + roomName + "' created.");
+                        }
+                    } finally {
+                        chatRoomsLock.unlock();
                     }
                 } else if (inputLine.startsWith("/join ")) {
                     String roomName = inputLine.substring(6).trim();
-                    if (!chatRooms.containsKey(roomName)) {
-                        out.println("Chat room does not exist.");
-                    } else {
-                        chatRooms.get(currentRoom).remove(clientSocket);
-                        currentRoom = roomName;
-                        chatRooms.get(roomName).put(clientSocket, username);
-                        out.println("Joined chat room '" + roomName + "'.");
+                    chatRoomsLock.lock();
+                    try {
+                        if (!chatRooms.containsKey(roomName)) {
+                            out.println("Chat room does not exist.");
+                        } else {
+                            chatRooms.get(currentRoom).remove(clientSocket);
+                            currentRoom = roomName;
+                            chatRooms.get(roomName).put(clientSocket, username);
+                            out.println("Joined chat room '" + roomName + "'.");
+                        }
+                    } finally {
+                        chatRoomsLock.unlock();
                     }
                 } else if (inputLine.equals("/leave")) {
-                    if (!currentRoom.equals("general")) {
-                        chatRooms.get(currentRoom).remove(clientSocket);
-                        currentRoom = "general";
-                        chatRooms.get("general").put(clientSocket, username);
-                        out.println("You have returned to the 'general' room.");
-                    } else {
-                        out.println("You are already in the 'general' room.");
+                    chatRoomsLock.lock();
+                    try {
+                        if (!currentRoom.equals("general")) {
+                            chatRooms.get(currentRoom).remove(clientSocket);
+                            currentRoom = "general";
+                            chatRooms.get("general").put(clientSocket, username);
+                            out.println("You have returned to the 'general' room.");
+                        } else {
+                            out.println("You are already in the 'general' room.");
+                        }
+                    } finally {
+                        chatRoomsLock.unlock();
+                    }
+                } else if (inputLine.equals("/list")) {
+                    chatRoomsLock.lock();
+                    try {
+                        out.println("Available chat rooms:");
+                        for (String room : chatRooms.keySet()) {
+                            out.println("- " + room);
+                        }
+                    } finally {
+                        chatRoomsLock.unlock();
                     }
                 } else {
                     // Log the message in the server terminal
                     System.out.println(currentRoom + "/" + username + ": " + inputLine);
 
                     // Broadcast message to the current room
-                    for (Socket socket : chatRooms.get(currentRoom).keySet()) {
-                        if (!socket.equals(clientSocket)) {
-                            //ignora este erro, tentei arranjar e parou de dar entao não mexas :3
-                            new PrintWriter(socket.getOutputStream(), true).println(username + ": " + inputLine); 
+                    chatRoomsLock.lock();
+                    try {
+                        for (Socket socket : chatRooms.get(currentRoom).keySet()) {
+                            if (!socket.equals(clientSocket)) {
+                                new PrintWriter(socket.getOutputStream(), true)
+                                    .println(username + ": " + inputLine);
+                            }
                         }
+                    } finally {
+                        chatRoomsLock.unlock();
                     }
                 }
             }
@@ -102,10 +153,21 @@ public class Server {
             e.printStackTrace();
         } finally {
             try {
-                String username = clientUsernames.remove(clientSocket);
+                String username;
+                clientUsernamesLock.lock();
+                try {
+                    username = clientUsernames.remove(clientSocket);
+                } finally {
+                    clientUsernamesLock.unlock();
+                }
                 if (username != null) {
                     System.out.println(username + " has disconnected.");
-                    chatRooms.get("general").remove(clientSocket);
+                    chatRoomsLock.lock();
+                    try {
+                        chatRooms.get("general").remove(clientSocket);
+                    } finally {
+                        chatRoomsLock.unlock();
+                    }
                 }
                 clientSocket.close();
             } catch (IOException e) {
