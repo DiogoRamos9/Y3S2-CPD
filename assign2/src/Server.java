@@ -97,13 +97,15 @@ public class Server {
                     chatRoomsLock.lock();
                     try {
                         if (!chatRooms.containsKey(roomName)) {
-                            out.println("Chat room does not exist.");
-                        } else {
-                            chatRooms.get(currentRoom).remove(clientSocket);
-                            currentRoom = roomName;
-                            chatRooms.get(roomName).put(clientSocket, username);
-                            out.println("Joined chat room '" + roomName + "'.");
-                        }
+                            chatRooms.put(roomName, new HashMap<>());
+                            out.println("Chat room '" + roomName + "' created.");
+                            
+                        } 
+                        chatRooms.get(currentRoom).remove(clientSocket);
+                        currentRoom = roomName;
+                        chatRooms.get(roomName).put(clientSocket, username);
+                        out.println("Joined chat room '" + roomName + "'.");
+
                     } finally {
                         chatRoomsLock.unlock();
                     }
