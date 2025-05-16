@@ -97,8 +97,18 @@ public class Client {
                 System.out.println("/users - List all users in the current room");
                 System.out.println("/help - Show this help message");
                 System.out.println("/exit - Exit the client");
+                if (user.getRole().equals("admin")) {
+                    System.out.println("/ban <username> - Ban a user from the server");
+                    System.out.println("/mute <username> - Temporarily prevent a user from sending messages");
+                    System.out.println("/unmute <username> - Allow a muted user to send messages again");
+                    System.out.println("/announce <message> - Send an announcement to all chat rooms");
+                    System.out.println("/promote <username> - Promote a user to admin role");
+                    System.out.println("/demote <username> - Demote an admin to regular user");
+                    System.out.println("/stats - Show server statistics and active connections");
+                }
+
                 break;
-            case "/create": case "/join": case "/leave": case "/rooms": case "/users":
+            case "/create": case "/join": case "/leave": case "/rooms": case "/users": case "/kick": case "/ban": case "/delete": case "/mute": case "/unmute": case "/announce": case "/promote": case "/demote": case "/stats":
                 break;
 
             default:

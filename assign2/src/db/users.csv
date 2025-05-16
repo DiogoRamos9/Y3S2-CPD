@@ -1,5 +1,4 @@
-username,password
-gui,123
-teste,123
-colt,123
-ginger,123
+username,password,role
+gui,123,admin
+colt,123,user
+ginger,123,user

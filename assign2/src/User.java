@@ -3,10 +3,12 @@ import java.io.*;
 public class User {
     private String username;
     private String password;
+    private String role;
 
-    User(String username, String password) {
+    User(String username, String password, String role) {
         this.username = username;
         this.password = password;
+        this.role = role;
     }
 
     public String getUsername() {
@@ -15,6 +17,14 @@ public class User {
 
     public String getPassword() {
         return password;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
     }
 
     public static User loginUser() {
@@ -47,7 +57,7 @@ public class User {
         }
         System.out.println("Enter password: ");
         String password = System.console().readLine();
-        UserManager.addUser(username, password);
+        UserManager.addUser(username, password, "user");
         try (BufferedWriter bw = new BufferedWriter(new FileWriter("db/users.csv", true))) {
             bw.write(username + "," + password);
             bw.newLine();
@@ -55,7 +65,7 @@ public class User {
             e.printStackTrace();
         }
 
-        User user = new User(username, password);
+        User user = new User(username, password, "user");
         return user;
     }
 }
