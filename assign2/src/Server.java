@@ -70,11 +70,18 @@ public class Server {
                 chatRoomsLock.unlock();
             }
 
-            System.out.println(username + " has joined the server and the 'general' room.\n");
+            System.out.println(username + " has joined the server and the 'general' room.");
 
             out.println("Welcome to the server, " + username + "!");
             out.println("You are in the 'general' room by default.");
-            out.println("Use /create <room_name>, /join <room_name>, /leave to manage chat rooms and /list .");
+            out.println("List of commands:");
+            out.println("/create <room_name> - Create a new chat room");
+            out.println("/join <room_name> - Join an existing chat room");
+            out.println("/leave - Leave the current chat room and return to 'general'");
+            out.println("/rooms - List all available chat rooms");
+            out.println("/users - List all user on the current room");
+            out.println("/help - Show this help message");
+            out.println("/exit - Exit the client");
 
             String currentRoom = "general";
             String inputLine;
@@ -105,7 +112,12 @@ public class Server {
                         currentRoom = roomName;
                         chatRooms.get(roomName).put(clientSocket, username);
                         out.println("Joined chat room '" + roomName + "'.");
-
+                        for (Socket socket : chatRooms.get(roomName).keySet()) {
+                            if (!socket.equals(clientSocket)) {
+                                new PrintWriter(socket.getOutputStream(), true)
+                                    .println(username + " has joined the room.");
+                            }
+                        }
                     } finally {
                         chatRoomsLock.unlock();
                     }
@@ -113,22 +125,77 @@ public class Server {
                     chatRoomsLock.lock();
                     try {
                         if (!currentRoom.equals("general")) {
-                            chatRooms.get(currentRoom).remove(clientSocket);
+                            String previousRoom = currentRoom;
+                            
+                            for (Socket socket : chatRooms.get(previousRoom).keySet()) {
+                                if (!socket.equals(clientSocket)) {
+                                    new PrintWriter(socket.getOutputStream(), true)
+                                        .println(username + " has left the room.");
+                                }
+                            }
+                            
+                            chatRooms.get(previousRoom).remove(clientSocket);
                             currentRoom = "general";
                             chatRooms.get("general").put(clientSocket, username);
                             out.println("You have returned to the 'general' room.");
+
+                            for (Socket socket : chatRooms.get("general").keySet()) {
+                                if (!socket.equals(clientSocket)) {
+                                    new PrintWriter(socket.getOutputStream(), true)
+                                        .println(username + " has returned to the 'general' room.");
+                                }
+                            }
                         } else {
                             out.println("You are already in the 'general' room.");
                         }
                     } finally {
                         chatRoomsLock.unlock();
-                    }
+                    } 
                 } else if (inputLine.equals("/list")) {
                     chatRoomsLock.lock();
                     try {
                         out.println("Available chat rooms:");
                         for (String room : chatRooms.keySet()) {
                             out.println("- " + room);
+                        }
+                    } finally {
+                        chatRoomsLock.unlock();
+                    }
+                } else if (inputLine.equals("/users")) {
+                    chatRoomsLock.lock();
+                    try {
+                        out.println("Users in the current room (" + currentRoom + "):");
+                        for (String user : chatRooms.get(currentRoom).values()) {
+                            out.println("- " + user);
+                        }
+                    } finally {
+                        chatRoomsLock.unlock();
+                    }
+                } else if (inputLine.equals("/help")) {
+                    out.println("List of commands:");
+                    out.println("/create <room_name> - Create a new chat room");
+                    out.println("/join <room_name> - Join an existing chat room");
+                    out.println("/leave - Leave the current chat room and return to 'general'");
+                    out.println("/rooms - List all available chat rooms");
+                    out.println("/users - List all users in the current room");
+                    out.println("/help - Show this help message");
+                    out.println("/exit - Exit the client");
+                } else if (inputLine.equals("/rooms")) {
+                    chatRoomsLock.lock();
+                    try {
+                        out.println("Available chat rooms:");
+                        for (String room : chatRooms.keySet()) {
+                            out.println("- " + room);
+                        }
+                    } finally {
+                        chatRoomsLock.unlock();
+                    }
+                } else if (inputLine.equals("/users")) {
+                    chatRoomsLock.lock();
+                    try {
+                        out.println("Users in the current room (" + currentRoom + "):");
+                        for (String user : chatRooms.get(currentRoom).values()) {
+                            out.println("- " + user);
                         }
                     } finally {
                         chatRoomsLock.unlock();

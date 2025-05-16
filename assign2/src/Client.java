@@ -90,14 +90,15 @@ public class Client {
                 break;
             case "/help":
                 System.out.println("Available commands:");
-                System.out.println("/exit - Exit the client");
                 System.out.println("/create <room_name> - Create a new chat room");
                 System.out.println("/join <room_name> - Join an existing chat room");
-                System.out.println("/leave - Leave the current chat room");
-                System.out.println("/list - List all available chat rooms");
+                System.out.println("/leave - Leave the current chat room and return to 'general'");
+                System.out.println("/rooms - List all available chat rooms");
+                System.out.println("/users - List all users in the current room");
                 System.out.println("/help - Show this help message");
+                System.out.println("/exit - Exit the client");
                 break;
-            case "/create": case "/join": case "/leave": case "/list":
+            case "/create": case "/join": case "/leave": case "/rooms": case "/users":
                 break;
 
             default:
