@@ -102,6 +102,7 @@ public class Server {
             String currentRoom = "general";
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
+                // Commands for every user
                 if (inputLine.startsWith("/create ")) {
                     String roomName = inputLine.substring(8).trim();
                     chatRoomsLock.lock();
@@ -115,7 +116,8 @@ public class Server {
                     } finally {
                         chatRoomsLock.unlock();
                     }
-                } else if (inputLine.startsWith("/join ")) {
+                }
+                else if (inputLine.startsWith("/join ")) {
                     String roomName = inputLine.substring(6).trim();
                     chatRoomsLock.lock();
                     try {
@@ -139,7 +141,8 @@ public class Server {
                     } finally {
                         chatRoomsLock.unlock();
                     }
-                } else if (inputLine.equals("/leave")) {
+                }
+                else if (inputLine.equals("/leave")) {
                     chatRoomsLock.lock();
                     try {
                         if (!currentRoom.equals("general")) {
@@ -172,7 +175,8 @@ public class Server {
                     } finally {
                         chatRoomsLock.unlock();
                     } 
-                } else if (inputLine.equals("/rooms")) {
+                }
+                else if (inputLine.equals("/rooms")) {
                     chatRoomsLock.lock();
                     try {
                         // Print the list of available chat rooms
@@ -183,7 +187,8 @@ public class Server {
                     } finally {
                         chatRoomsLock.unlock();
                     }
-                } else if (inputLine.equals("/users")) {
+                }
+                else if (inputLine.equals("/users")) {
                     chatRoomsLock.lock();
                     try {
                         // Print the list of users in the current room
@@ -194,52 +199,75 @@ public class Server {
                     } finally {
                         chatRoomsLock.unlock();
                     }
-                } else if (inputLine.equals("/help")) {
-                    out.println("List of commands:");
-                    out.println("/create <room_name> - Create a new chat room");
-                    out.println("/join <room_name> - Join an existing chat room");
-                    out.println("/leave - Leave the current chat room and return to 'general'");
-                    out.println("/rooms - List all available chat rooms");
-                    out.println("/users - List all users in the current room");
-                    out.println("/help - Show this help message");
-                    out.println("/exit - Exit the client");
+                }
+                // Commands for admins
+                else if (inputLine.startsWith("/ban ")) {
                     if (isAdmin(username)) {
-                        out.println("You are an admin, you can use the following commands:");
-                        out.println("/ban <username> - Ban a user from the server");
-                        out.println("/mute <username> - Temporarily prevent a user from sending messages");
-                        out.println("/unmute <username> - Allow a muted user to send messages again");
-                        out.println("/announce <message> - Send an announcement to all chat rooms");
-                        out.println("/promote <username> - Promote a user to admin role");
-                        out.println("/demote <username> - Demote an admin to regular user");
-                        out.println("/stats - Show server statistics and active connections");
+                        // Ban a user from the server
+                        String userToBan = inputLine.substring(5).trim();
+                        banUser(userToBan, username, out);
                     }
-                } else if (inputLine.startsWith("/ban ") && isAdmin(username)) {
-                    // Ban a user from the server
-                    String userToBan = inputLine.substring(5).trim();
-                    banUser(userToBan, username, out);
-                } else if (inputLine.startsWith("/mute ") && isAdmin(username)) {
-                    String userToMute = inputLine.substring(6).trim();
-                    muteUser(userToMute, username, out);
-                } else if (inputLine.startsWith("/unmute ") && isAdmin(username)) {
-                    String userToUnmute = inputLine.substring(8).trim();
-                    unmuteUser(userToUnmute, username, out);
-                } else if (inputLine.startsWith("/announce ") && isAdmin(username)) {
-                    // Send an announcement to all chat rooms
-                    String announcement = inputLine.substring(10).trim();
-                    broadcastAnnouncement(announcement, username);
-                    out.println("Announcement sent to all rooms.");
-                } else if (inputLine.startsWith("/promote ") && isAdmin(username)) {
-                    // Set the user role to admin
-                    String userToPromote = inputLine.substring(9).trim();
-                    promoteUser(userToPromote, username, out);
-                } else if (inputLine.startsWith("/demote ") && isAdmin(username)) {
-                    // Set the user role to regular user
-                    String userToDemote = inputLine.substring(8).trim();
-                    demoteUser(userToDemote, username, out);
-                } else if (inputLine.equals("/stats") && isAdmin(username)) {
-                    // Display server statistics
-                    displayServerStats(out);
-                } else {
+                    else {
+                        out.println("You do not have permission to ban users.");
+                    }
+                }
+                else if (inputLine.startsWith("/mute ")) {
+                    if (isAdmin(username)) {
+                        // Mute a user
+                        String userToMute = inputLine.substring(6).trim();
+                        muteUser(userToMute, username, out);
+                    } else {
+                        out.println("You do not have permission to mute users.");
+                    }
+                }
+                else if (inputLine.startsWith("/unmute ")) {
+                    if (isAdmin(username)) {
+                        // Unmute a user
+                        String userToUnmute = inputLine.substring(8).trim();
+                        unmuteUser(userToUnmute, username, out);
+                    } else {
+                        out.println("You do not have permission to unmute users.");
+                    }
+                } 
+                else if (inputLine.startsWith("/announce ")) {
+                    if (isAdmin(username)) {
+                        // Send an announcement to all chat rooms
+                        String announcement = inputLine.substring(10).trim();
+                        broadcastAnnouncement(announcement, username);
+                        out.println("Announcement sent to all rooms.");
+                    } else {
+                        out.println("You do not have permission to make announcements.");
+                    }
+                } 
+                else if (inputLine.startsWith("/promote ")) {
+                    if (isAdmin(username)) {
+                        // Set the user role to admin
+                        String userToPromote = inputLine.substring(9).trim();
+                        promoteUser(userToPromote, username, out);
+                    } else {
+                        out.println("You do not have permission to promote users.");
+                    }
+                } 
+                else if (inputLine.startsWith("/demote ")) {
+                    if (isAdmin(username)) {
+                        // Set the user role to regular user
+                        String userToDemote = inputLine.substring(8).trim();
+                        demoteUser(userToDemote, username, out);
+                    } else {
+                        out.println("You do not have permission to demote users.");
+                    }
+                } 
+                else if (inputLine.equals("/stats")) {
+                    if (isAdmin(username)) {
+                        // Display server statistics
+                        displayServerStats(out);
+                    } else {
+                        out.println("You do not have permission to view server statistics.");
+                    }
+                }
+                
+                // The message is not a command
+                else {
                     boolean isMuted = UserManager.isUserMuted(username);
                     
                     if (isMuted) {
@@ -391,7 +419,7 @@ public class Server {
             return;
         }
         UserManager.promoteToAdmin(userToPromote);
-        adminOut.println("User " + userToPromote + " has been promoted to admin by + " + adminUsername + ".");
+        adminOut.println("User " + userToPromote + " has been promoted to admin by " + adminUsername + ".");
         
         Socket userSocket = findUserSocketByUsername(userToPromote);
         if (userSocket != null) {
