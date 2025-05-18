@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
+import java.net.HttpURLConnection;
+import java.nio.charset.StandardCharsets;
 
 public class Server {
     private static final int PORT = 8080;
@@ -497,6 +499,45 @@ public class Server {
     }
 
     private static String callLLM(String context) {
-        return "This is a placeholder AI response.";
+        try {
+            URL url = new URL("http://localhost:11434/api/generate");
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
+
+            String safePrompt = context.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+            String jsonInput = String.format(
+                "{ \"model\": \"llama3\", \"prompt\": \"%s\", \"stream\": false }",
+                safePrompt
+            );
+
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = jsonInput.getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            StringBuilder response = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(
+                    new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    response.append(line.trim());
+                }
+            }
+            String resp = response.toString();
+            int idx = resp.indexOf("\"response\":\"");
+            if (idx != -1) {
+                int start = idx + 12;
+                int end = resp.indexOf("\"", start);
+                if (end > start) {
+                    return resp.substring(start, end).replace("\\n", "\n");
+                }
+            }
+            return "[AI Error: Unexpected response]";
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "[AI Error: " + e.getMessage() + "]";
+        }
     }
 }
