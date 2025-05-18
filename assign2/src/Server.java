@@ -13,6 +13,8 @@ public class Server {
     // Shared data structures
     private static final Map<Socket, String> clientUsernames = new HashMap<>(); // Socket: username
     private static final Map<String, Map<Socket, String>> chatRooms = new HashMap<>();  // Room name: (Socket: username)
+    private static final Map<String, String> aiRoomPrompts = new HashMap<>(); // roomName -> prompt
+    private static final Map<String, List<String>> aiRoomHistory = new HashMap<>(); // roomName -> message history
 
     private static final ReentrantLock clientUsernamesLock = new ReentrantLock();  // Lock for clientUsernames 
     private static final ReentrantLock chatRoomsLock = new ReentrantLock();  // Lock for chatRooms
@@ -104,14 +106,27 @@ public class Server {
             while ((inputLine = in.readLine()) != null) {
                 // Commands for every user
                 if (inputLine.startsWith("/create ")) {
-                    String roomName = inputLine.substring(8).trim();
+                    String roomSpec = inputLine.substring(8).trim();
                     chatRoomsLock.lock();
                     try {
-                        if (chatRooms.containsKey(roomName)) {
+                        if (chatRooms.containsKey(roomSpec)) {
                             out.println("Chat room already exists.");
+                        } else if (roomSpec.startsWith("ai:")) {
+                            // AI room: format is ai:<room_name>:<prompt>
+                            String[] parts = roomSpec.split(":", 3);
+                            if (parts.length < 3) {
+                                out.println("Invalid AI room format. Use ai:<room_name>:<prompt>");
+                            } else {
+                                String aiRoomName = parts[1];
+                                String prompt = parts[2];
+                                chatRooms.put(aiRoomName, new HashMap<>());
+                                aiRoomPrompts.put(aiRoomName, prompt);
+                                aiRoomHistory.put(aiRoomName, new java.util.ArrayList<>());
+                                out.println("AI chat room '" + aiRoomName + "' created with prompt: " + prompt);
+                            }
                         } else {
-                            chatRooms.put(roomName, new HashMap<>());
-                            out.println("Chat room '" + roomName + "' created.");
+                            chatRooms.put(roomSpec, new HashMap<>());
+                            out.println("Chat room '" + roomSpec + "' created.");
                         }
                     } finally {
                         chatRoomsLock.unlock();
@@ -269,20 +284,16 @@ public class Server {
                 // The message is not a command
                 else {
                     boolean isMuted = UserManager.isUserMuted(username);
-                    
                     if (isMuted) {
                         out.println("You are currently muted and cannot send messages.");
                         continue;
                     }
-                    // Log the message in the server terminal
                     System.out.println(currentRoom + "/" + username + ": " + inputLine);
 
-                    // Broadcast message to the current room
                     chatRoomsLock.lock();
                     try {
-                        // Iterate through all sockets in the current room
+                        // Broadcast to users as before
                         for (Socket socket : chatRooms.get(currentRoom).keySet()) {
-                            // Send the message to all users in the room except the sender
                             if (!socket.equals(clientSocket)) {
                                 final String msgUsername = username;
                                 final String msgInputLine = inputLine;
@@ -292,6 +303,27 @@ public class Server {
                                             .println(msgUsername + ": " + msgInputLine);
                                     } catch (Exception e) {
                                         System.out.println("Error sending message to " + socket.getInetAddress());
+                                        e.printStackTrace();
+                                    }
+                                });
+                            }
+                        }
+                        // If AI room, update history and call LLM
+                        if (aiRoomPrompts.containsKey(currentRoom)) {
+                            List<String> history = aiRoomHistory.get(currentRoom);
+                            history.add(username + ": " + inputLine);
+                            String prompt = aiRoomPrompts.get(currentRoom);
+                            String context = prompt + "\n" + String.join("\n", history);
+                            String botReply = callLLM(context); // Implement this method to call Ollama or other LLM
+                            history.add("Bot: " + botReply);
+                            // Broadcast bot reply
+                            for (Socket socket : chatRooms.get(currentRoom).keySet()) {
+                                Thread.startVirtualThread(() -> {
+                                    try {
+                                        new PrintWriter(socket.getOutputStream(), true)
+                                            .println("Bot: " + botReply);
+                                    } catch (Exception e) {
+                                        System.out.println("Error sending bot message to " + socket.getInetAddress());
                                         e.printStackTrace();
                                     }
                                 });
@@ -517,5 +549,11 @@ public class Server {
         } finally {
             clientUsernamesLock.unlock();
         }
+    }
+
+    private static String callLLM(String context) {
+        // TODO: Implement HTTP call to local LLM (e.g., Ollama)
+        // For now, return a dummy response
+        return "This is a placeholder AI response.";
     }
 }
