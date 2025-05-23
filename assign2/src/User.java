@@ -4,6 +4,7 @@ public class User {
     private String username;
     private String password;
     private String role;
+    private Token token;
 
     User(String username, String password, String role) {
         this.username = username;
@@ -25,6 +26,14 @@ public class User {
 
     public void setRole(String role) {
         this.role = role;
+    }
+
+    public void setToken(Token token) {
+        this.token = token;
+    }
+
+    public Token getToken() {
+        return token;
     }
 
     public static User loginUser() {

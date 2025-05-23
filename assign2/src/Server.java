@@ -4,7 +4,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
-import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 
 public class Server {
@@ -16,7 +15,10 @@ public class Server {
     private static final Map<String, Map<Socket, String>> chatRooms = new HashMap<>();
     private static final Map<String, String> aiRoomPrompts = new HashMap<>();
     private static final Map<String, List<String>> aiRoomHistory = new HashMap<>();
-
+    private static final Map<String, Token> userTokens = new HashMap<>();   // username -> token
+    private static final Map<String, String> userCurrentRooms = new HashMap<>();
+    
+    private static final ReentrantLock userRoomsLock = new ReentrantLock();
     private static final ReentrantLock clientUsernamesLock = new ReentrantLock();
     private static final ReentrantLock chatRoomsLock = new ReentrantLock();
 
@@ -56,10 +58,66 @@ public class Server {
 
     private static void handleClient(Socket clientSocket) {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
+            PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
 
             String username = in.readLine();
+            
+            // Get token string from client
+            String tokenString = in.readLine();
+            System.out.println("Client " + username + " connecting with token: [" + tokenString + "]");
+            
+            Token token;
+            boolean isReconnection = false;
+            String currentRoom = "general";
+            
+            // Check if this is a reconnection with valid token
+            if (tokenString != null && !tokenString.isEmpty()) {
+                token = validateToken(username, tokenString);
+                System.out.println("Validating token for " + username + ": " + (token != null ? "VALID" : "INVALID"));
+                
+                if (token != null) {
+                    isReconnection = true;
+                    System.out.println("Successful reconnection for " + username + " with token: " + token.getTokenString());
+                    
+                    // Get the user's current room if reconnecting
+                    userRoomsLock.lock();
+                    try {
+                        if (userCurrentRooms.containsKey(username)) {
+                            currentRoom = userCurrentRooms.get(username);
+                        }
+                    } finally {
+                        userRoomsLock.unlock();
+                    }
+                } else {
+                    // Invalid/expired token
+                    System.out.println("Expired or invalid token for " + username);
+                    out.println("Your session has expired. Please login again.");
+                    clientSocket.close();
+                    return;
+                }
+            } else {
+                // New connection or no token provided
+                User user = UserManager.getUserByUsername(username);
+                if (user == null || user.getToken() == null) {
+                    // Generate new token for first-time connection
+                    token = Token.generateToken(username);
+                    userTokens.put(username, token);
+                    System.out.println("Generated new token for " + username + ": " + token.getTokenString());
+                    
+                    User currentUser = UserManager.getUserByUsername(username);
+                    if (currentUser != null) {
+                        currentUser.setToken(token);
+                    }
+                } else {
+                    // Use existing token
+                    token = user.getToken();
+                    System.out.println("Using existing token for " + username + ": " + token.getTokenString());
+                }
+                // Send token to client for future reconnections
+                out.println("TOKEN:" + token.getTokenString());
+            }
 
+            // Update user tracking
             clientUsernamesLock.lock();
             try {
                 clientUsernames.put(clientSocket, username);
@@ -67,41 +125,96 @@ public class Server {
                 clientUsernamesLock.unlock();
             }
 
+            // Place user in appropriate room
             chatRoomsLock.lock();
+
             try {
-                chatRooms.get("general").put(clientSocket, username);
+                // If reconnecting, place in last known room
+                if (isReconnection) {
+                    // Remove from general (default) first to avoid duplication
+                    if (chatRooms.containsKey("general")) {
+                        chatRooms.get("general").remove(clientSocket);
+                    }
+                    
+                    // Add to current room
+                    if (!chatRooms.containsKey(currentRoom)) {
+                        chatRooms.put(currentRoom, new HashMap<>());
+                    }
+                    chatRooms.get(currentRoom).put(clientSocket, username);
+                    
+                    // Notify user about reconnection
+                    out.println("Reconnected to server. You are in room '" + currentRoom + "'.");
+                    
+                    // Notify other users in the room about reconnection
+                    for (Socket socket : chatRooms.get(currentRoom).keySet()) {
+                        if (!socket.equals(clientSocket)) {
+                            try {
+                                new PrintWriter(socket.getOutputStream(), true)
+                                    .println(username + " has reconnected to the room.");
+                            } catch (IOException e) {
+                                // Socket may be closed or broken
+                            }
+                        }
+                    }
+                } else {
+                    // New connection - place in general room
+                    chatRooms.get("general").put(clientSocket, username);
+                    
+                    // Update current room tracking
+                    userRoomsLock.lock();
+                    try {
+                        userCurrentRooms.put(username, "general");
+                    } finally {
+                        userRoomsLock.unlock();
+                    }
+                    out.println("Welcome to the server, " + username + "!");
+                    out.println("You are in the 'general' room by default.");
+                    out.println("List of commands:");
+                    out.println("/create <room_name> - Create a new chat room");
+                    out.println("/join <room_name> - Join an existing chat room");
+                    out.println("/leave - Leave the current chat room and return to 'general'");
+                    out.println("/rooms - List all available chat rooms");
+                    out.println("/users - List all user on the current room");
+                    out.println("/help - Show this help message");
+                    out.println("/exit - Exit the client");
+                    if (isAdmin(username)) {
+                        out.println("You are an admin, you can use the following commands:");
+                        out.println("/ban <username> - Ban a user from the server");
+                        out.println("/mute <username> - Temporarily prevent a user from sending messages");
+                        out.println("/unmute <username> - Allow a muted user to send messages again");
+                        out.println("/announce <message> - Send an announcement to all chat rooms");
+                        out.println("/promote <username> - Promote a user to admin role");
+                        out.println("/demote <username> - Demote an admin to regular user");
+                        out.println("/stats - Show server statistics and active connections");
+                    } else {
+                        out.println("You are a regular user.");
+                    }
+                }
             } finally {
                 chatRoomsLock.unlock();
             }
 
-            System.out.println(username + " has joined the server and the 'general' room.");
-
-            out.println("Welcome to the server, " + username + "!");
-            out.println("You are in the 'general' room by default.");
-            out.println("List of commands:");
-            out.println("/create <room_name> - Create a new chat room");
-            out.println("/join <room_name> - Join an existing chat room");
-            out.println("/leave - Leave the current chat room and return to 'general'");
-            out.println("/rooms - List all available chat rooms");
-            out.println("/users - List all user on the current room");
-            out.println("/help - Show this help message");
-            out.println("/exit - Exit the client");
-            if (isAdmin(username)) {
-                out.println("You are an admin, you can use the following commands:");
-                out.println("/ban <username> - Ban a user from the server");
-                out.println("/mute <username> - Temporarily prevent a user from sending messages");
-                out.println("/unmute <username> - Allow a muted user to send messages again");
-                out.println("/announce <message> - Send an announcement to all chat rooms");
-                out.println("/promote <username> - Promote a user to admin role");
-                out.println("/demote <username> - Demote an admin to regular user");
-                out.println("/stats - Show server statistics and active connections");
-            } else {
-                out.println("You are a regular user.");
-            }
-
-            String currentRoom = "general";
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
+                // Handle room change commands by updating userCurrentRooms
+                if (inputLine.startsWith("/join ")) {
+                    String roomName = inputLine.substring(6).trim();
+                    userRoomsLock.lock();
+                    try {
+                        userCurrentRooms.put(username, roomName);
+                    } finally {
+                        userRoomsLock.unlock();
+                    }
+                    currentRoom = roomName;
+                } else if (inputLine.equals("/leave")) {
+                    userRoomsLock.lock();
+                    try {
+                        userCurrentRooms.put(username, "general");
+                    } finally {
+                        userRoomsLock.unlock();
+                    }
+                    currentRoom = "general";
+                }
                 if (inputLine.startsWith("/create ")) {
                     String roomSpec = inputLine.substring(8).trim();
                     chatRoomsLock.lock();
@@ -123,57 +236,6 @@ public class Server {
                         } else {
                             chatRooms.put(roomSpec, new HashMap<>());
                             out.println("Chat room '" + roomSpec + "' created.");
-                        }
-                    } finally {
-                        chatRoomsLock.unlock();
-                    }
-                }
-                else if (inputLine.startsWith("/join ")) {
-                    String roomName = inputLine.substring(6).trim();
-                    chatRoomsLock.lock();
-                    try {
-                        if (!chatRooms.containsKey(roomName)) {
-                            chatRooms.put(roomName, new HashMap<>());
-                            out.println("Chat room '" + roomName + "' created.");
-                        }
-                        chatRooms.get(currentRoom).remove(clientSocket);
-                        currentRoom = roomName;
-                        chatRooms.get(roomName).put(clientSocket, username);
-                        out.println("Joined chat room '" + roomName + "'.");
-
-                        for (Socket socket : chatRooms.get(roomName).keySet()) {
-                            if (!socket.equals(clientSocket)) {
-                                new PrintWriter(socket.getOutputStream(), true)
-                                    .println(username + " has joined the room.");
-                            }
-                        }
-                    } finally {
-                        chatRoomsLock.unlock();
-                    }
-                }
-                else if (inputLine.equals("/leave")) {
-                    chatRoomsLock.lock();
-                    try {
-                        if (!currentRoom.equals("general")) {
-                            String previousRoom = currentRoom;
-                            for (Socket socket : chatRooms.get(previousRoom).keySet()) {
-                                if (!socket.equals(clientSocket)) {
-                                    new PrintWriter(socket.getOutputStream(), true)
-                                        .println(username + " has left the room.");
-                                }
-                            }
-                            chatRooms.get(previousRoom).remove(clientSocket);
-                            currentRoom = "general";
-                            chatRooms.get("general").put(clientSocket, username);
-                            out.println("You have returned to the 'general' room.");
-                            for (Socket socket : chatRooms.get("general").keySet()) {
-                                if (!socket.equals(clientSocket)) {
-                                    new PrintWriter(socket.getOutputStream(), true)
-                                        .println(username + " has returned to the 'general' room.");
-                                }
-                            }
-                        } else {
-                            out.println("You are already in the 'general' room.");
                         }
                     } finally {
                         chatRoomsLock.unlock();
@@ -318,11 +380,21 @@ public class Server {
                 } finally {
                     clientUsernamesLock.unlock();
                 }
+                
                 if (username != null) {
-                    System.out.println(username + " has disconnected.");
+                    // Note: We DO NOT remove the user from userCurrentRooms
+                    // to maintain their state for reconnection
+                    
+                    // Also, we don't remove the token to allow reconnections
+                    System.out.println(username + " disconnected (may reconnect).");
+                    
+                    // We DO remove them from the active room participants
                     chatRoomsLock.lock();
                     try {
-                        chatRooms.get("general").remove(clientSocket);
+                        // Try to find which room they're in and remove them
+                        for (Map<Socket, String> room : chatRooms.values()) {
+                            room.remove(clientSocket);
+                        }
                     } finally {
                         chatRoomsLock.unlock();
                     }
@@ -332,6 +404,20 @@ public class Server {
                 e.printStackTrace();
             }
         }
+    }
+
+    private static Token validateToken(String username, String tokenString) {
+        // Check if token exists and is valid for this user
+        Token token = userTokens.get(username);
+        if (token != null && tokenString.equals(token.getTokenString())) {
+            if (token.isExpired()) {
+                // Token exists but has expired
+                userTokens.remove(username);
+                return null;
+            }
+            return token;
+        }
+        return null; // Token doesn't exist or doesn't match
     }
 
     private static boolean isAdmin(String username) {

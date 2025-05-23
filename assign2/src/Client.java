@@ -9,75 +9,114 @@ public class Client {
     private static BufferedReader in;
     private static PrintWriter out;
     private static User user;
-
+    private static String tokenString = "";
+    private static String currentRoom = "general"; 
+    private static final int RECONNECT_DELAY_MS = 2000;
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    
     public static void main(String[] args) {
         authenticateUser();
-    
-        try {
-            socket = new Socket(HOST, PORT);
-            System.out.println("Connected to server at " + HOST + ":" + PORT);
-    
-            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            out = new PrintWriter(socket.getOutputStream(), true);
-    
-            // Envia o nome do client para o servidor
-            out.println(user.getUsername());
-    
-            // Thread to listen for messages from the server
-            Thread serverListener = new Thread(() -> {
-                try {
-                    String serverMessage;
-                    while ((serverMessage = in.readLine()) != null) {
-                        // Clears the current line and prints the server message
-                        System.out.print("\r");  
-                        System.out.println(serverMessage);  
-                        System.out.print(user.getUsername() + ": ");
-                    }
-                } catch (IOException e) {}
-            });
-            serverListener.start();
-    
-            BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
-            System.out.print(user.getUsername() + ": ");
-            while (running && socket.isConnected() && !socket.isClosed()) {
-                // Read user input
-                String message = userInput.readLine();
+        
+        int reconnectAttempts = 0;
+        while (running && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            try {
+                connectToServer();
                 
-                if (message == null || message.isEmpty()) {
-                    continue;
-                }
+                // Reset reconnect attempts on successful connection
+                reconnectAttempts = 0;
                 
-                Boolean isCommand = message.charAt(0) == '/';
-                
-                if (isCommand) {
-                    handleCommand(message);
-                    if (!running) {
-                        break;
-                    }
-                }
-                
-                else {
-                    System.out.println("\r" + user.getUsername() + ": " + message);
-                }
-                
-                out.println(message);
-                
+                // Main processing loop
+                BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
                 System.out.print(user.getUsername() + ": ");
-            }
-    
-            socket.close();
-            System.out.println("Disconnected from server.");
-        } catch (IOException e) {
-            e.printStackTrace();
-        } finally {
-            if (socket != null && !socket.isClosed()) {
-                try {
-                    socket.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                String message;
+                while (running && socket.isConnected() && !socket.isClosed() && (message = userInput.readLine()) != null) {
+                    if (message.isEmpty()) {
+                        continue;
+                    }
+                    
+                    boolean isCommand = message.charAt(0) == '/';
+                    
+                    if (isCommand) {
+                        handleCommand(message);
+                        if (!running) {
+                            break;
+                        }
+                        // Track room changes
+                        if (message.startsWith("/join ")) {
+                            currentRoom = message.substring(6).trim();
+                        } else if (message.equals("/leave")) {
+                            currentRoom = "general";
+                        }
+                    } else {
+                        System.out.println("\r" + user.getUsername() + ": " + message);
+                    }
+                    
+                    out.println(message);
+                    System.out.print(user.getUsername() + ": ");
+                }
+            } catch (IOException e) {
+                System.out.println("Connection lost. Attempting to reconnect...");
+                reconnectAttempts++;
+                
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    try {
+                        Thread.sleep(RECONNECT_DELAY_MS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    System.out.println("Failed to reconnect after " + MAX_RECONNECT_ATTEMPTS + " attempts. Exiting.");
                 }
             }
         }
+        
+        System.out.println("Disconnected from server.");
+    }
+
+    private static void connectToServer() throws IOException {
+        // Close previous socket if exists
+        if (socket != null && !socket.isClosed()) {
+            try {
+                socket.close();
+            } catch (IOException e) {
+                // Ignore, we're already handling a connection problem
+            }
+        }
+        
+        socket = new Socket(HOST, PORT);
+        System.out.println("Connected to server at " + HOST + ":" + PORT);
+        
+        in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        out = new PrintWriter(socket.getOutputStream(), true);
+        
+        // Send username and token for authentication/reconnection
+        out.println(user.getUsername());
+        out.println(tokenString); // Send token string (empty on first login)
+        
+        // Start listening for server messages
+        Thread serverListener = new Thread(() -> {
+            try {
+                String serverMessage;
+                while ((serverMessage = in.readLine()) != null) {
+                    // If we receive a token from server, save it
+                    if (serverMessage.startsWith("TOKEN:")) {
+                        tokenString = serverMessage.substring(6);
+                        System.out.println("Received authentication token from server.");
+                        continue;
+                    }
+                    
+                    System.out.print("\r");  // Clear line
+                    System.out.println(serverMessage);
+                    System.out.print(user.getUsername() + ": ");
+                }
+            } catch (IOException e) {
+                if (running) {
+                    System.out.println("\rConnection to server lost.");
+                }
+            }
+        });
+        serverListener.setDaemon(true);
+        serverListener.start();
     }
 
     private static void handleCommand(String command) {
@@ -96,6 +135,7 @@ public class Client {
                 System.out.println("/rooms - List all available chat rooms");
                 System.out.println("/users - List all users in the current room");
                 System.out.println("/help - Show this help message");
+                System.out.println("/status - Show the current status of the client");
                 System.out.println("/exit - Exit the client");
                 if (user.getRole().equals("admin")) {
                     System.out.println("/ban <username> - Ban a user from the server");
@@ -111,6 +151,12 @@ public class Client {
             case "/create": case "/join": case "/leave": case "/rooms": case "/users": case "/kick": case "/ban": case "/delete": case "/mute": case "/unmute": case "/announce": case "/promote": case "/demote": case "/stats":
                 break;
 
+            case "/status":
+                System.out.println("Current user: " + user.getUsername());
+                System.out.println("Current room: " + currentRoom);
+                System.out.println("Token: " + tokenString);
+                break;
+
             default:
                 System.out.println("Unknown command: " + command);
         }
@@ -118,30 +164,35 @@ public class Client {
 
     private static void authenticateUser() {
         boolean authenticated = false;
-        do {
-            System.out.println("1 - Login \n2 - Register");
-            String choice = System.console().readLine();
-            switch (choice) {
-                case "1":
-                    if ((user = User.loginUser()) == null) {
-                        continue;
-                    } else {
-                        System.out.println("Login successful!");
-                        authenticated = true;
-                    }
-                    break;
-                case "2":
-                    if ((user = User.registerUser()) == null) {
-                        System.out.println("Registration failed. Please try again.");
-                    } else {
-                        System.out.println("Registration successful!");
-                        authenticated = true;
-                    }
-                    break;
-                default:
-                    System.out.println("Invalid option. Please try again.");
-                    break;
-            }
-        } while (!authenticated);
+        
+        // TODO: Implement a method to check if the token is valid
+
+        if (!authenticated) {
+            do {
+                System.out.println("1 - Login \n2 - Register");
+                String choice = System.console().readLine();
+                switch (choice) {
+                    case "1":
+                        if ((user = User.loginUser()) == null) {
+                            continue;
+                        } else {
+                            System.out.println("Login successful!");
+                            authenticated = true;
+                        }
+                        break;
+                    case "2":
+                        if ((user = User.registerUser()) == null) {
+                            System.out.println("Registration failed. Please try again.");
+                        } else {
+                            System.out.println("Registration successful!");
+                            authenticated = true;
+                        }
+                        break;
+                    default:
+                        System.out.println("Invalid option. Please try again.");
+                        break;
+                }
+            } while (!authenticated);
+        }
     }
 }
