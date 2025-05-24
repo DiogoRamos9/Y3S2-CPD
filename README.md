@@ -25,5 +25,5 @@ In how many different terminal desired, for clients type:
 
 '''java --enable-preview App client'''
 
-Either Register or Login, and you will join the /general group chat.
+Either Register or Login, and you will join the general group chat.
 Type /help to show all available commands.

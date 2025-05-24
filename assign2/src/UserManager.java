@@ -92,7 +92,7 @@ public class UserManager {
             try {
                 for (User user : users) {
                     if (user.getUsername().equals(username)) {
-                        user.setRole(username);
+                        user.setRole("user");
                         break;
                     }
                 }

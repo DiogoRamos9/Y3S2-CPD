@@ -54,7 +54,6 @@ public class Client {
                             currentRoom = message.substring(6).trim();
                         } else if (message.equals("/leave")) {
                             currentRoom = "general";
-                            System.out.print("\r" + user.getUsername() + ": ");
                         } else if (message.equals("/disconnect")) {
                             disconnectFromServer();
                             break;
@@ -133,6 +132,38 @@ public class Client {
                         tokenString = serverMessage.substring(6);
                         user.setToken(Token.getToken(user.getUsername(), tokenString));
                         continue;
+                    }
+
+                    if (serverMessage.startsWith("BANNED:")) {                        
+                        connected = false;
+                        running = false;
+                        voluntaryDisconnect = true;
+                        
+                        try {
+                            if (socket != null && !socket.isClosed()) {
+                                socket.close();
+                            }
+                        } catch (IOException e) {}
+                        
+                        new Thread(() -> {
+                            try {
+                                Thread.sleep(2000);  
+                                System.exit(0);  
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }).start();
+                        
+                        return;
+                    }
+
+                    // If we receive a message indicating the user is banned, handle it
+                    if (serverMessage.startsWith("ROLE_UPDATE:")) {
+                        String newRole = serverMessage.substring(12);
+                        user.setRole(newRole);
+                        System.out.println("\rYour role has been updated to: " + newRole);
+                        System.out.print(user.getUsername() + ": ");
+                        continue; 
                     }
                     
                     // Handle session expiration
