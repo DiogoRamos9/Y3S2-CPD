@@ -1,10 +1,12 @@
 import java.net.*;
 import java.io.*;
+import javax.net.ssl.SSLSocket;
+import javax.net.ssl.SSLSocketFactory;
 
 public class Client {
     private static final int PORT = 8080;
     private static final String HOST = "127.0.0.1";
-    private static Socket socket;
+    private static SSLSocket socket; // Changed from Socket to SSLSocket
     private static boolean running = true;
     private static boolean connected = false;
     private static boolean isExit = false;
@@ -97,19 +99,24 @@ public class Client {
     }
 
     private static void connectToServer() throws IOException {
+        // Set trust store properties (for self-signed certificates)
+        System.setProperty("javax.net.ssl.trustStore", "truststore.jks");
+        System.setProperty("javax.net.ssl.trustStorePassword", "password123");
+
         // Close previous socket if exists
         if (socket != null && !socket.isClosed()) {
             try {
                 socket.close();
             } catch (IOException e) {}
         }
-        
-        socket = new Socket(HOST, PORT);
+
+        SSLSocketFactory sslSocketFactory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+        socket = (SSLSocket) sslSocketFactory.createSocket(HOST, PORT);
         System.out.println("Connected to server at " + HOST + ":" + PORT);
-        
+
         in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         out = new PrintWriter(socket.getOutputStream(), true);
-        
+
         voluntaryDisconnect = false;
 
         // Send username and token for authentication/reconnection

@@ -5,17 +5,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.nio.charset.StandardCharsets;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLServerSocketFactory;
+import javax.net.ssl.SSLSocket;
 
 public class Server {
     private static final int PORT = 8080;
     private static final String HOST = "0.0.0.0";
-    private static ServerSocket serverSocket;
+    // private static ServerSocket serverSocket;
+    private static SSLServerSocket serverSocket;
 
     private static final Map<Socket, String> clientUsernames = new HashMap<>();
     private static final Map<String, Map<Socket, String>> chatRooms = new HashMap<>();
     private static final Map<String, String> aiRoomPrompts = new HashMap<>();
     private static final Map<String, List<String>> aiRoomHistory = new HashMap<>();
-    private static final Map<String, Token> userTokens = new HashMap<>();   // username -> token
+    private static final Map<String, Token> userTokens = new HashMap<>(); 
     private static final Map<String, String> userCurrentRooms = new HashMap<>();
     
     private static final ReentrantLock userRoomsLock = new ReentrantLock();
@@ -26,6 +30,10 @@ public class Server {
     private static final String TOKENS_FILE = "db/tokens.csv";
 
     public static void main(String[] args) {
+        // Set SSL properties (ensure these files exist and are correct)
+        System.setProperty("javax.net.ssl.keyStore", "keystore.jks");
+        System.setProperty("javax.net.ssl.keyStorePassword", "password123"); 
+
         UserManager.setupUsers();
 
         // Load existing tokens from file
@@ -39,10 +47,11 @@ public class Server {
                 chatRoomsLock.unlock();
             }
 
-            serverSocket = new ServerSocket(PORT);
-            System.out.println("Server started on " + HOST + ":" + PORT);
+            SSLServerSocketFactory sslServerSocketFactory = (SSLServerSocketFactory) SSLServerSocketFactory.getDefault();
+            serverSocket = (SSLServerSocket) sslServerSocketFactory.createServerSocket(PORT);
+            System.out.println("SSL Server started on " + HOST + ":" + PORT);
             while (true) {
-                Socket clientSocket = serverSocket.accept();
+                SSLSocket clientSocket = (SSLSocket) serverSocket.accept();
                 System.out.println("Client connected: " + clientSocket.getInetAddress());
                 Thread.startVirtualThread(() -> handleClient(clientSocket));
 
