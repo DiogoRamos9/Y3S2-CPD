@@ -7,6 +7,7 @@ public class Client {
     private static Socket socket;
     private static boolean running = true;
     private static boolean connected = false;
+    private static boolean voluntaryDisconnect = false;
     private static BufferedReader in;
     private static PrintWriter out;
     private static User user;
@@ -106,6 +107,8 @@ public class Client {
         in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
         out = new PrintWriter(socket.getOutputStream(), true);
         
+        voluntaryDisconnect = false;
+
         // Send username and token for authentication/reconnection
         out.println(user.getUsername());
         out.println(tokenString); // Send token string (empty on first login)
@@ -118,7 +121,6 @@ public class Client {
                     // If we receive a token from server, save it
                     if (serverMessage.startsWith("TOKEN:")) {
                         tokenString = serverMessage.substring(6);
-                        System.out.println("Received authentication token from server.");
                         continue;
                     }
                     
@@ -131,10 +133,61 @@ public class Client {
                     System.out.println(serverMessage);
                     System.out.print(user.getUsername() + ": ");
                 }
-            } catch (IOException e) {
-                if (running) {
-                    System.out.println("\rConnection to server lost.");
+                
+                // Only try to reconnect if this was not a voluntary disconnect
+                if (connected && !voluntaryDisconnect) {
+                    System.out.println("\rServer disconnected. Attempting to reconnect...");
                     connected = false;
+                    
+                    // Connection attempt
+                    boolean reconnected = false;
+                    for (int attempts = 1; attempts <= MAX_RECONNECT_ATTEMPTS; attempts++) {
+                        System.out.println("Reconnect attempt " + attempts + " of " + MAX_RECONNECT_ATTEMPTS + "...");
+                        try {
+                            Thread.sleep(RECONNECT_DELAY_MS);
+                            Socket newSocket = new Socket(HOST, PORT);
+                            System.out.println("Reconnected successfully!");
+                            reconnected = true;
+                            socket = newSocket;
+                            break;
+                        } catch (IOException | InterruptedException e) {
+                            System.out.println("Reconnect attempt " + attempts + " failed.");
+                        }
+                    }
+                    
+                    if (!reconnected) {
+                        System.out.println("Failed to reconnect after " + MAX_RECONNECT_ATTEMPTS + " attempts. Exiting.");
+                        running = false;
+                    }
+                }
+            } catch (IOException e) {
+                // Server disconnected unexpectedly
+                if (running && !voluntaryDisconnect) {
+                    System.out.println("\rConnection lost HERE. Attempting to reconnect...");
+                    connected = false;
+                    
+                    // Attempt to reconnect
+                    boolean reconnected = false;
+                    for (int attempts = 1; attempts <= MAX_RECONNECT_ATTEMPTS; attempts++) {
+                        System.out.println("Reconnect attempt " + attempts + " of " + MAX_RECONNECT_ATTEMPTS + "...");
+                        try {
+                            Thread.sleep(RECONNECT_DELAY_MS);
+                            Socket newSocket = new Socket(HOST, PORT);
+                            System.out.println("Reconnected successfully!");
+                            reconnected = true;
+                            socket = newSocket;                      
+                            break;
+                        } catch (IOException ex) {
+                            System.out.println("Reconnect attempt " + attempts + " failed.");
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+                    
+                    if (!reconnected) {
+                        System.out.println("Failed to reconnect after " + MAX_RECONNECT_ATTEMPTS + " attempts. Exiting.");
+                        running = false;
+                    }
                 }
             }
         });
@@ -143,6 +196,9 @@ public class Client {
     }
 
     private static void disconnectFromServer() {
+        // Set voluntary disconnect flag to prevent auto-reconnection
+        voluntaryDisconnect = true;
+        
         if (connected && out != null) {
             out.println("/disconnect");  // Inform server about voluntary disconnection
         }

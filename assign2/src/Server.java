@@ -176,7 +176,8 @@ public class Server {
                     out.println("/rooms - List all available chat rooms");
                     out.println("/users - List all user on the current room");
                     out.println("/help - Show this help message");
-                    out.println("/exit - Exit the client");
+                    out.println("/disconnect - Disconnect from the server but keep the session active for reconnection");
+                    out.println("/exit - Exit the client and terminate the session");
                     if (isAdmin(username)) {
                         out.println("You are an admin, you can use the following commands:");
                         out.println("/ban <username> - Ban a user from the server");
