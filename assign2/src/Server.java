@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
 
 public class Server {
     private static final int PORT = 8080;
@@ -22,9 +21,16 @@ public class Server {
     private static final ReentrantLock userRoomsLock = new ReentrantLock();
     private static final ReentrantLock clientUsernamesLock = new ReentrantLock();
     private static final ReentrantLock chatRoomsLock = new ReentrantLock();
+    private static final ReentrantLock userTokensLock = new ReentrantLock();
+    
+    private static final String TOKENS_FILE = "db/tokens.csv";
 
     public static void main(String[] args) {
         UserManager.setupUsers();
+
+        // Load existing tokens from file
+        loadTokens();
+
         try {
             chatRoomsLock.lock();
             try {
@@ -101,13 +107,21 @@ public class Server {
                 if (user == null || user.getToken() == null) {
                     // Generate new token for first-time connection
                     token = Token.generateToken(username);
-                    userTokens.put(username, token);
+                    userTokensLock.lock();
+                    try {
+                        userTokens.put(username, token);
+                    } finally {
+                        userTokensLock.unlock();
+                    }
                     System.out.println("Generated new token for " + username + ": " + token.getTokenString());
                     
                     User currentUser = UserManager.getUserByUsername(username);
                     if (currentUser != null) {
                         currentUser.setToken(token);
                     }
+                    
+                    // Save the new token to file
+                    saveToken(token);
                 } else {
                     // Use existing token
                     token = user.getToken();
@@ -151,9 +165,7 @@ public class Server {
                             try {
                                 new PrintWriter(socket.getOutputStream(), true)
                                     .println(username + " has reconnected to the room.");
-                            } catch (IOException e) {
-                                // Socket may be closed or broken
-                            }
+                            } catch (IOException e) {}
                         }
                     }
                 } else {
@@ -302,7 +314,7 @@ public class Server {
                             chatRoomsLock.unlock();
                         }
                     }
-                    else if (inputLine.equals("/disconnect")) {                        
+                    else if (inputLine.equals("/disconnect")) {
                         chatRoomsLock.lock();
                         try {
                             if (chatRooms.containsKey(currentRoom)) {
@@ -322,6 +334,40 @@ public class Server {
                         }
                         
                         break;
+                    }
+                    else if (inputLine.equals("/exit")) {
+                        // Handled by the client
+                        break;
+                    }
+                    else if (inputLine.equals("/help")) {
+                        out.println("List of commands:");
+                        out.println("/create <room_name> - Create a new chat room");
+                        out.println("/join <room_name> - Join an existing chat room");
+                        out.println("/leave - Leave the current chat room and return to 'general'");
+                        out.println("/rooms - List all available chat rooms");
+                        out.println("/users - List all users in the current room");
+                        out.println("/help - Show this help message");
+                        out.println("/disconnect - Disconnect from the server but keep the session active for reconnection");
+                        out.println("/exit - Exit the client and terminate the session");
+                        if (isAdmin(username)) {
+                            out.println("You are an admin, you can use the following commands:");
+                            out.println("/ban <username> - Ban a user from the server");
+                            out.println("/mute <username> - Temporarily prevent a user from sending messages");
+                            out.println("/unmute <username> - Allow a muted user to send messages again");
+                            out.println("/announce <message> - Send an announcement to all chat rooms");
+                            out.println("/promote <username> - Promote a user to admin role");
+                            out.println("/demote <username> - Demote an admin to regular user");
+                            out.println("/stats - Show server statistics and active connections");
+                        } else {
+                            out.println("You are a regular user.");
+                        }
+                    }
+                    else if (inputLine.equals("/stats")) {
+                        if (isAdmin(username)) {
+                            displayServerStats(out);
+                        } else {
+                            out.println("You do not have permission to view server statistics.");
+                        }
                     }
 
                     // Admin commands
@@ -449,8 +495,8 @@ public class Server {
                     // to maintain their state for reconnection
                     
                     // Also, we don't remove the token in order to allow reconnections
-                    System.out.println(username + " disconnected (may reconnect).");
-                    
+                    System.out.println(username + " disconnected.");
+
                     // We DO remove them from the active room participants
                     chatRoomsLock.lock();
                     try {
@@ -469,19 +515,137 @@ public class Server {
         }
     }
 
+    // Load tokens from file
+    private static void loadTokens() {
+        File tokenFile = new File(TOKENS_FILE);
+        if (!tokenFile.exists()) {
+            // Create tokens directory if it doesn't exist
+            File tokenDir = new File("db");
+            if (!tokenDir.exists()) {
+                tokenDir.mkdirs();
+            }
+            return;
+        }
+
+        try (BufferedReader br = new BufferedReader(new FileReader(TOKENS_FILE))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                // Skip header
+                if (line.startsWith("username,token,expiration")) {
+                    continue;
+                }
+                String[] parts = line.split(",");
+                if (parts.length == 3) {
+                    String username = parts[0];
+                    String tokenString = parts[1];
+                    Long expiration = Long.parseLong(parts[2]);
+                    
+                    Token token = new Token(username, tokenString, expiration);
+                    
+                    // Only load tokens that haven't expired yet
+                    if (!token.isExpired()) {
+                        userTokensLock.lock();
+                        try {
+                            userTokens.put(username, token);
+                            // Also update the user object
+                            User user = UserManager.getUserByUsername(username);
+                            if (user != null) {
+                                user.setToken(token);
+                            }
+                            System.out.println("Loaded token for " + username + ": " + tokenString);
+                        } finally {
+                            userTokensLock.unlock();
+                        }
+                    }
+                    else {
+                        System.out.println("WARNING: Token for user " + username + " has expired.");
+                    }
+                }
+            }
+            System.out.println("Loaded " + userTokens.size() + " active tokens");
+        } catch (IOException e) {
+            System.err.println("Error loading tokens: " + e.getMessage());
+        }
+    }
+
+    // Save token to file
+    private static void saveToken(Token token) {
+        try {
+            // Create directory if it doesn't exist
+            File tokenDir = new File("db");
+            if (!tokenDir.exists()) {
+                tokenDir.mkdirs();
+            }
+            
+            // Append the token to the file
+            boolean fileExists = new File(TOKENS_FILE).exists();
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(TOKENS_FILE, true))) {
+                if (!fileExists) {
+                    // Create the file with a header if it doesn't exist
+                    writer.write("username,token,expiration\n");
+                }
+                
+                writer.write(token.getUsername() + "," + 
+                             token.getTokenString() + "," + 
+                             token.getExpirationTime() + "\n");
+            }
+        } catch (IOException e) {
+            System.err.println("Error saving token: " + e.getMessage());
+        }
+    }
+
+    // Method to update/rewrite all tokens to file (for refreshed tokens)
+    private static void updateTokensFile() {
+        userTokensLock.lock();
+        try {
+            // Create directory if it doesn't exist
+            File tokenDir = new File("db");
+            if (!tokenDir.exists()) {
+                tokenDir.mkdirs();
+            }
+            
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(TOKENS_FILE, false))) {
+                // Write header
+                writer.write("username,token,expiration\n");
+                
+                // Write all tokens
+                for (Token token : userTokens.values()) {
+                    if (!token.isExpired()) {
+                        writer.write(token.getUsername() + "," + 
+                                     token.getTokenString() + "," + 
+                                     token.getExpirationTime() + "\n");
+                    }
+                }
+            }
+        } catch (IOException e) {
+            System.err.println("Error updating tokens file: " + e.getMessage());
+        } finally {
+            userTokensLock.unlock();
+        }
+    }
+
     private static Token validateToken(String username, String tokenString) {
         // Check if token exists and is valid for this user
-        Token token = userTokens.get(username);
-        if (token != null && tokenString.equals(token.getTokenString())) {
-            if (token.isExpired()) {
-                // Token exists but has expired
-                userTokens.remove(username);
-                return null;
+        userTokensLock.lock();
+        try {
+            Token token = userTokens.get(username);
+            if (token != null && tokenString.equals(token.getTokenString())) {
+                if (token.isExpired()) {
+                    // Token exists but has expired
+                    userTokens.remove(username);
+                    return null;
+                }
+                // Refresh token expiration time when used for reconnection
+                token = Token.refreshToken(token);
+                userTokens.put(username, token);
+                
+                // Update token in file system
+                updateTokensFile();
+                
+                return token;
             }
-            // Refresh token expiration time when used for reconnection
-            token = Token.refreshToken(token);
-            userTokens.put(username, token);
-            return token;
+        } finally {
+            userTokensLock.unlock();
         }
         return null; // Token doesn't exist or doesn't match
     }

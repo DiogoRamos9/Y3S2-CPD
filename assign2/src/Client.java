@@ -86,6 +86,7 @@ public class Client {
                 } else {
                     System.out.println("Failed to reconnect after " + MAX_RECONNECT_ATTEMPTS + " attempts. Exiting.");
                     running = false;
+                    return;
                 }
             }
         }
@@ -121,6 +122,28 @@ public class Client {
                     // If we receive a token from server, save it
                     if (serverMessage.startsWith("TOKEN:")) {
                         tokenString = serverMessage.substring(6);
+                        user.setToken(Token.getToken(user.getUsername(), tokenString));
+                        continue;
+                    }
+                    
+                    // Handle session expiration
+                    if (serverMessage.equals("Your session has expired. Please login again.")) {
+                        // Clear the token so we'll login again on next connection
+                        tokenString = "";
+                        if (user.getToken() != null) {
+                            user.setToken(null);
+                        }
+                        
+                        System.out.println(serverMessage);
+                        // Force reconnection with new authentication
+                        disconnectFromServer();
+                        try {
+                            authenticateUser(); // Re-authenticate the user
+                            connectToServer();  // And reconnect
+                            connected = true;
+                        } catch (IOException e) {
+                            System.out.println("Failed to reconnect after session expiration.");
+                        }
                         continue;
                     }
                     
@@ -133,7 +156,7 @@ public class Client {
                     System.out.println(serverMessage);
                     System.out.print(user.getUsername() + ": ");
                 }
-                
+                                
                 // Only try to reconnect if this was not a voluntary disconnect
                 if (connected && !voluntaryDisconnect) {
                     System.out.println("\rServer disconnected. Attempting to reconnect...");
@@ -145,14 +168,12 @@ public class Client {
                         System.out.println("Reconnect attempt " + attempts + " of " + MAX_RECONNECT_ATTEMPTS + "...");
                         try {
                             Thread.sleep(RECONNECT_DELAY_MS);
-                            Socket newSocket = new Socket(HOST, PORT);
+                            connectToServer(); // Use the existing method to properly reconnect
                             System.out.println("Reconnected successfully!");
                             reconnected = true;
-                            socket = newSocket;
+                            connected = true; // Set connected flag
                             break;
-                        } catch (IOException | InterruptedException e) {
-                            System.out.println("Reconnect attempt " + attempts + " failed.");
-                        }
+                        } catch (IOException | InterruptedException e) {}
                     }
                     
                     if (!reconnected) {
@@ -163,7 +184,7 @@ public class Client {
             } catch (IOException e) {
                 // Server disconnected unexpectedly
                 if (running && !voluntaryDisconnect) {
-                    System.out.println("\rConnection lost HERE. Attempting to reconnect...");
+                    System.out.println("\rConnection lost. Attempting to reconnect...");
                     connected = false;
                     
                     // Attempt to reconnect
@@ -172,14 +193,14 @@ public class Client {
                         System.out.println("Reconnect attempt " + attempts + " of " + MAX_RECONNECT_ATTEMPTS + "...");
                         try {
                             Thread.sleep(RECONNECT_DELAY_MS);
-                            Socket newSocket = new Socket(HOST, PORT);
+                            connectToServer(); // Use the existing method to properly reconnect
                             System.out.println("Reconnected successfully!");
                             reconnected = true;
-                            socket = newSocket;                      
+                            connected = true; // Set connected flag
                             break;
-                        } catch (IOException ex) {
-                            System.out.println("Reconnect attempt " + attempts + " failed.");
-                        } catch (InterruptedException ie) {
+                        } 
+                        catch (IOException ex) {}
+                        catch (InterruptedException ie) {
                             Thread.currentThread().interrupt();
                         }
                     }
@@ -218,10 +239,6 @@ public class Client {
         String[] parts = command.trim().split("\\s+", 2);
         String cmd = parts[0];
         switch (cmd) {
-            case "/quit":
-                running = false;
-                break;
-            
             case "/disconnect":
                 disconnectFromServer();
                 break;
@@ -242,7 +259,6 @@ public class Client {
                 System.out.println("/status - Show the current status of the client");
                 System.out.println("/disconnect - Disconnect from server but keep program running");
                 System.out.println("/exit - Exit the client program");
-                System.out.println("/quit - Exit the client program (same as /exit)");
                 if (user.getRole().equals("admin")) {
                     System.out.println("/ban <username> - Ban a user from the server");
                     System.out.println("/mute <username> - Temporarily prevent a user from sending messages");
@@ -260,9 +276,27 @@ public class Client {
 
             case "/status":
                 System.out.println("Current user: " + user.getUsername());
+                if (user.getRole().equals("admin")) {
+                    System.out.println("Role: Admin");
+                } else {
+                    System.out.println("Role: User");
+                }
                 System.out.println("Current room: " + currentRoom);
                 System.out.println("Connected: " + connected);
-                System.out.println("Token: " + (tokenString.isEmpty() ? "None" : "Valid"));
+                if (user.getToken() == null) {
+                    System.out.println("No token available.");
+                } else {
+                    System.out.println("Token: " + user.getToken().getTokenString());
+                    if (user.getToken().isExpired()) {
+                        System.out.println("Token status: Expired");
+                    } else {
+                        long remainingMillis = user.getToken().getExpirationTime() - System.currentTimeMillis();
+                        java.time.LocalDateTime expirationDateTime = java.time.LocalDateTime.now().plus(java.time.Duration.ofMillis(remainingMillis));
+                        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter
+                            .ofPattern("yyyy-MM-dd HH:mm:ss");
+                        System.out.println("Token status: Valid until " + expirationDateTime.format(formatter));
+                    }
+                }
                 break;
 
             default:
@@ -274,7 +308,6 @@ public class Client {
         boolean authenticated = false;
         
         if (user != null && !tokenString.isEmpty()) {
-            authenticated = true;
             System.out.println("Using saved authentication token.");
             return;
         }
