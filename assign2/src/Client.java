@@ -6,6 +6,7 @@ public class Client {
     private static final String HOST = "127.0.0.1";
     private static Socket socket;
     private static boolean running = true;
+    private static boolean connected = false;
     private static BufferedReader in;
     private static PrintWriter out;
     private static User user;
@@ -20,7 +21,10 @@ public class Client {
         int reconnectAttempts = 0;
         while (running && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
             try {
-                connectToServer();
+                if (!connected) {
+                    connectToServer();
+                    connected = true;
+                }
                 
                 // Reset reconnect attempts on successful connection
                 reconnectAttempts = 0;
@@ -29,7 +33,7 @@ public class Client {
                 BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
                 System.out.print(user.getUsername() + ": ");
                 String message;
-                while (running && socket.isConnected() && !socket.isClosed() && (message = userInput.readLine()) != null) {
+                while (running && connected && socket != null && socket.isConnected() && !socket.isClosed() && (message = userInput.readLine()) != null) {
                     if (message.isEmpty()) {
                         continue;
                     }
@@ -46,16 +50,29 @@ public class Client {
                             currentRoom = message.substring(6).trim();
                         } else if (message.equals("/leave")) {
                             currentRoom = "general";
+                        } else if (message.equals("/disconnect")) {
+                            disconnectFromServer();
+                            break;
                         }
                     } else {
                         System.out.println("\r" + user.getUsername() + ": " + message);
                     }
-                    
-                    out.println(message);
-                    System.out.print(user.getUsername() + ": ");
+
+                    if (connected && out != null) {
+                        // Send the message to the server
+                        out.println(message);
+                        System.out.print(user.getUsername() + ": ");
+                    }
+                }
+
+                if (!connected && running) {
+                    String input = userInput.readLine();
+                    if ("quit".equalsIgnoreCase(input)) {
+                        running = false;
+                    }
                 }
             } catch (IOException e) {
-                System.out.println("Connection lost. Attempting to reconnect...");
+                System.out.println("\rConnection lost. Attempting to reconnect in " + (RECONNECT_DELAY_MS/1000) + " seconds...");
                 reconnectAttempts++;
                 
                 if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
@@ -64,13 +81,15 @@ public class Client {
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                     }
+                    System.out.println("Reconnect attempt " + reconnectAttempts + " of " + MAX_RECONNECT_ATTEMPTS + "...");
                 } else {
                     System.out.println("Failed to reconnect after " + MAX_RECONNECT_ATTEMPTS + " attempts. Exiting.");
+                    running = false;
                 }
             }
         }
         
-        System.out.println("Disconnected from server.");
+        System.out.println("Exiting program.");
     }
 
     private static void connectToServer() throws IOException {
@@ -78,9 +97,7 @@ public class Client {
         if (socket != null && !socket.isClosed()) {
             try {
                 socket.close();
-            } catch (IOException e) {
-                // Ignore, we're already handling a connection problem
-            }
+            } catch (IOException e) {}
         }
         
         socket = new Socket(HOST, PORT);
@@ -97,12 +114,17 @@ public class Client {
         Thread serverListener = new Thread(() -> {
             try {
                 String serverMessage;
-                while ((serverMessage = in.readLine()) != null) {
+                while (connected && (serverMessage = in.readLine()) != null) {
                     // If we receive a token from server, save it
                     if (serverMessage.startsWith("TOKEN:")) {
                         tokenString = serverMessage.substring(6);
                         System.out.println("Received authentication token from server.");
                         continue;
+                    }
+                    
+                    // Capture room join confirmations to update current room
+                    if (serverMessage.startsWith("You joined the room: ")) {
+                        currentRoom = serverMessage.substring("You joined the room: ".length());
                     }
                     
                     System.out.print("\r");  // Clear line
@@ -112,6 +134,7 @@ public class Client {
             } catch (IOException e) {
                 if (running) {
                     System.out.println("\rConnection to server lost.");
+                    connected = false;
                 }
             }
         });
@@ -119,14 +142,39 @@ public class Client {
         serverListener.start();
     }
 
+    private static void disconnectFromServer() {
+        if (connected && out != null) {
+            out.println("/disconnect");  // Inform server about voluntary disconnection
+        }
+        
+        connected = false;
+        
+        if (socket != null) {
+            try {
+                socket.close();
+            } catch (IOException e) {}
+        }
+        
+        System.out.println("Disconnected from server. Type anything to reconnect or 'quit' to exit.");
+    }
+
     private static void handleCommand(String command) {
         String[] parts = command.trim().split("\\s+", 2);
-        command = parts[0];
-        switch (command) {
-            case "/exit":
-                out.println("Client disconnected.");
+        String cmd = parts[0];
+        switch (cmd) {
+            case "/quit":
                 running = false;
                 break;
+            
+            case "/disconnect":
+                disconnectFromServer();
+                break;
+            
+            case "/exit":
+                running = false;
+                disconnectFromServer();
+                break;
+            
             case "/help":
                 System.out.println("Available commands:");
                 System.out.println("/create <room_name> - Create a new chat room");
@@ -136,7 +184,9 @@ public class Client {
                 System.out.println("/users - List all users in the current room");
                 System.out.println("/help - Show this help message");
                 System.out.println("/status - Show the current status of the client");
-                System.out.println("/exit - Exit the client");
+                System.out.println("/disconnect - Disconnect from server but keep program running");
+                System.out.println("/exit - Exit the client program");
+                System.out.println("/quit - Exit the client program (same as /exit)");
                 if (user.getRole().equals("admin")) {
                     System.out.println("/ban <username> - Ban a user from the server");
                     System.out.println("/mute <username> - Temporarily prevent a user from sending messages");
@@ -146,26 +196,32 @@ public class Client {
                     System.out.println("/demote <username> - Demote an admin to regular user");
                     System.out.println("/stats - Show server statistics and active connections");
                 }
-
                 break;
+            
+            // These commands are handled by the server
             case "/create": case "/join": case "/leave": case "/rooms": case "/users": case "/kick": case "/ban": case "/delete": case "/mute": case "/unmute": case "/announce": case "/promote": case "/demote": case "/stats":
                 break;
 
             case "/status":
                 System.out.println("Current user: " + user.getUsername());
                 System.out.println("Current room: " + currentRoom);
-                System.out.println("Token: " + tokenString);
+                System.out.println("Connected: " + connected);
+                System.out.println("Token: " + (tokenString.isEmpty() ? "None" : "Valid"));
                 break;
 
             default:
-                System.out.println("Unknown command: " + command);
+                System.out.println("Unknown command: " + cmd);
         }
     }
 
     private static void authenticateUser() {
         boolean authenticated = false;
         
-        // TODO: Implement a method to check if the token is valid
+        if (user != null && !tokenString.isEmpty()) {
+            authenticated = true;
+            System.out.println("Using saved authentication token.");
+            return;
+        }
 
         if (!authenticated) {
             do {

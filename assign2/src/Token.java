@@ -27,6 +27,12 @@ public class Token {
         return token;
     }
 
+    public static Token refreshToken(Token existingToken) {
+        // Create a new token with refreshed expiration but the same token string
+        Long newExpirationTime = Instant.now().getEpochSecond() + 3600; // Reset to 1 hour from now
+        return new Token(existingToken.getUsername(), existingToken.getTokenString(), newExpirationTime);
+    }
+
     public boolean isExpired() {
         return Instant.now().getEpochSecond() > expirationTime;
     }

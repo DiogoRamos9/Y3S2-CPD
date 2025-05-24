@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.locks.ReentrantLock;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 
 public class Server {
     private static final int PORT = 8080;
@@ -59,13 +60,12 @@ public class Server {
     private static void handleClient(Socket clientSocket) {
         try (BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true)) {
-
+            
             String username = in.readLine();
             
             // Get token string from client
             String tokenString = in.readLine();
-            System.out.println("Client " + username + " connecting with token: [" + tokenString + "]");
-            
+
             Token token;
             boolean isReconnection = false;
             String currentRoom = "general";
@@ -196,128 +196,190 @@ public class Server {
 
             String inputLine;
             while ((inputLine = in.readLine()) != null) {
-                // Handle room change commands by updating userCurrentRooms
-                if (inputLine.startsWith("/join ")) {
-                    String roomName = inputLine.substring(6).trim();
-                    userRoomsLock.lock();
-                    try {
-                        userCurrentRooms.put(username, roomName);
-                    } finally {
-                        userRoomsLock.unlock();
-                    }
-                    currentRoom = roomName;
-                } else if (inputLine.equals("/leave")) {
-                    userRoomsLock.lock();
-                    try {
-                        userCurrentRooms.put(username, "general");
-                    } finally {
-                        userRoomsLock.unlock();
-                    }
-                    currentRoom = "general";
-                }
-                if (inputLine.startsWith("/create ")) {
-                    String roomSpec = inputLine.substring(8).trim();
-                    chatRoomsLock.lock();
-                    try {
-                        if (chatRooms.containsKey(roomSpec)) {
-                            out.println("Chat room already exists.");
-                        } else if (roomSpec.startsWith("ai:")) {
-                            String[] parts = roomSpec.split(":", 3);
-                            if (parts.length < 3) {
-                                out.println("Invalid AI room format. Use ai:<room_name>:<prompt>");
-                            } else {
-                                String aiRoomName = parts[1];
-                                String prompt = parts[2];
-                                chatRooms.put(aiRoomName, new HashMap<>());
-                                aiRoomPrompts.put(aiRoomName, prompt);
-                                aiRoomHistory.put(aiRoomName, new java.util.ArrayList<>());
-                                out.println("AI chat room '" + aiRoomName + "' created with prompt: " + prompt);
+                // Handle commands
+                if (inputLine.startsWith("/")) {
+                    if (inputLine.startsWith("/join ")) {
+                        String roomName = inputLine.substring(6).trim();
+                        
+                        // Verificar se a sala existe antes de tentar entrar
+                        chatRoomsLock.lock();
+                        try {
+                            if (!chatRooms.containsKey(roomName)) {
+                                // Sala não existe, notificar o usuário
+                                out.println("Error: Chat room '" + roomName + "' does not exist.");
+                                continue; // Pular para a próxima iteração do loop
                             }
+                            
+                            // Remover o usuário da sala atual
+                            if (chatRooms.containsKey(currentRoom)) {
+                                chatRooms.get(currentRoom).remove(clientSocket);
+                            }
+                            
+                            // Adicionar o usuário à nova sala
+                            chatRooms.get(roomName).put(clientSocket, username);
+                            
+                            // Atualizar o rastreamento da sala atual
+                            userRoomsLock.lock();
+                            try {
+                                userCurrentRooms.put(username, roomName);
+                            } finally {
+                                userRoomsLock.unlock();
+                            }
+                            
+                            currentRoom = roomName;
+                            out.println("You joined the room: " + roomName);
+                            
+                            // Notificar outros usuários na sala
+                            for (Socket socket : chatRooms.get(roomName).keySet()) {
+                                if (!socket.equals(clientSocket)) {
+                                    try {
+                                        new PrintWriter(socket.getOutputStream(), true)
+                                            .println(username + " has joined the room.");
+                                    } catch (IOException e) {
+                                        // Socket pode estar fechado ou com problema
+                                    }
+                                }
+                            }
+                        } finally {
+                            chatRoomsLock.unlock();
+                        }
+                    }
+                    else if (inputLine.equals("/leave")) {
+                        userRoomsLock.lock();
+                        try {
+                            userCurrentRooms.put(username, "general");
+                        } finally {
+                            userRoomsLock.unlock();
+                        }
+                        currentRoom = "general";
+                    }
+                    else if (inputLine.startsWith("/create ")) {
+                        String roomSpec = inputLine.substring(8).trim();
+                        chatRoomsLock.lock();
+                        try {
+                            if (chatRooms.containsKey(roomSpec)) {
+                                out.println("Chat room already exists.");
+                            } else if (roomSpec.startsWith("ai:")) {
+                                String[] parts = roomSpec.split(":", 3);
+                                if (parts.length < 3) {
+                                    out.println("Invalid AI room format. Use ai:<room_name>:<prompt>");
+                                } else {
+                                    String aiRoomName = parts[1];
+                                    String prompt = parts[2];
+                                    chatRooms.put(aiRoomName, new HashMap<>());
+                                    aiRoomPrompts.put(aiRoomName, prompt);
+                                    aiRoomHistory.put(aiRoomName, new java.util.ArrayList<>());
+                                    out.println("AI chat room '" + aiRoomName + "' created with prompt: " + prompt);
+                                }
+                            } else {
+                                chatRooms.put(roomSpec, new HashMap<>());
+                                out.println("Chat room '" + roomSpec + "' created.");
+                            }
+                        } finally {
+                            chatRoomsLock.unlock();
+                        }
+                    }
+                    else if (inputLine.equals("/rooms")) {
+                        chatRoomsLock.lock();
+                        try {
+                            out.println("Available chat rooms:");
+                            for (String room : chatRooms.keySet()) {
+                                out.println("- " + room);
+                            }
+                        } finally {
+                            chatRoomsLock.unlock();
+                        }
+                    }
+                    else if (inputLine.equals("/users")) {
+                        chatRoomsLock.lock();
+                        try {
+                            out.println("Users in the current room (" + currentRoom + "):");
+                            for (String user : chatRooms.get(currentRoom).values()) {
+                                out.println("- " + user);
+                            }
+                        } finally {
+                            chatRoomsLock.unlock();
+                        }
+                    }
+                    else if (inputLine.equals("/disconnect")) {                        
+                        chatRoomsLock.lock();
+                        try {
+                            if (chatRooms.containsKey(currentRoom)) {
+                                for (Socket socket : chatRooms.get(currentRoom).keySet()) {
+                                    if (!socket.equals(clientSocket)) {
+                                        try {
+                                            new PrintWriter(socket.getOutputStream(), true)
+                                                .println(username + " has disconnected.");
+                                        } catch (IOException e) {}
+                                    }
+                                }
+                                
+                                chatRooms.get(currentRoom).remove(clientSocket);
+                            }
+                        } finally {
+                            chatRoomsLock.unlock();
+                        }
+                        
+                        break;
+                    }
+
+                    // Admin commands
+                    else if (inputLine.startsWith("/ban ")) {
+                        if (isAdmin(username)) {
+                            String userToBan = inputLine.substring(5).trim();
+                            banUser(userToBan, username, out);
+                        }
+                        else {
+                            out.println("You do not have permission to ban users.");
+                        }
+                    }
+                    else if (inputLine.startsWith("/mute ")) {
+                        if (isAdmin(username)) {
+                            String userToMute = inputLine.substring(6).trim();
+                            muteUser(userToMute, username, out);
                         } else {
-                            chatRooms.put(roomSpec, new HashMap<>());
-                            out.println("Chat room '" + roomSpec + "' created.");
+                            out.println("You do not have permission to mute users.");
                         }
-                    } finally {
-                        chatRoomsLock.unlock();
                     }
-                }
-                else if (inputLine.equals("/rooms")) {
-                    chatRoomsLock.lock();
-                    try {
-                        out.println("Available chat rooms:");
-                        for (String room : chatRooms.keySet()) {
-                            out.println("- " + room);
+                    else if (inputLine.startsWith("/unmute ")) {
+                        if (isAdmin(username)) {
+                            String userToUnmute = inputLine.substring(8).trim();
+                            unmuteUser(userToUnmute, username, out);
+                        } else {
+                            out.println("You do not have permission to unmute users.");
                         }
-                    } finally {
-                        chatRoomsLock.unlock();
                     }
-                }
-                else if (inputLine.equals("/users")) {
-                    chatRoomsLock.lock();
-                    try {
-                        out.println("Users in the current room (" + currentRoom + "):");
-                        for (String user : chatRooms.get(currentRoom).values()) {
-                            out.println("- " + user);
+                    else if (inputLine.startsWith("/announce ")) {
+                        if (isAdmin(username)) {
+                            String announcement = inputLine.substring(10).trim();
+                            broadcastAnnouncement(announcement, username);
+                            out.println("Announcement sent to all rooms.");
+                        } else {
+                            out.println("You do not have permission to make announcements.");
                         }
-                    } finally {
-                        chatRoomsLock.unlock();
                     }
-                }
-                else if (inputLine.startsWith("/ban ")) {
-                    if (isAdmin(username)) {
-                        String userToBan = inputLine.substring(5).trim();
-                        banUser(userToBan, username, out);
+                    else if (inputLine.startsWith("/promote ")) {
+                        if (isAdmin(username)) {
+                            String userToPromote = inputLine.substring(9).trim();
+                            promoteUser(userToPromote, username, out);
+                        } else {
+                            out.println("You do not have permission to promote users.");
+                        }
                     }
-                    else {
-                        out.println("You do not have permission to ban users.");
+                    else if (inputLine.startsWith("/demote ")) {
+                        if (isAdmin(username)) {
+                            String userToDemote = inputLine.substring(8).trim();
+                            demoteUser(userToDemote, username, out);
+                        } else {
+                            out.println("You do not have permission to demote users.");
+                        }
                     }
-                }
-                else if (inputLine.startsWith("/mute ")) {
-                    if (isAdmin(username)) {
-                        String userToMute = inputLine.substring(6).trim();
-                        muteUser(userToMute, username, out);
-                    } else {
-                        out.println("You do not have permission to mute users.");
-                    }
-                }
-                else if (inputLine.startsWith("/unmute ")) {
-                    if (isAdmin(username)) {
-                        String userToUnmute = inputLine.substring(8).trim();
-                        unmuteUser(userToUnmute, username, out);
-                    } else {
-                        out.println("You do not have permission to unmute users.");
-                    }
-                }
-                else if (inputLine.startsWith("/announce ")) {
-                    if (isAdmin(username)) {
-                        String announcement = inputLine.substring(10).trim();
-                        broadcastAnnouncement(announcement, username);
-                        out.println("Announcement sent to all rooms.");
-                    } else {
-                        out.println("You do not have permission to make announcements.");
-                    }
-                }
-                else if (inputLine.startsWith("/promote ")) {
-                    if (isAdmin(username)) {
-                        String userToPromote = inputLine.substring(9).trim();
-                        promoteUser(userToPromote, username, out);
-                    } else {
-                        out.println("You do not have permission to promote users.");
-                    }
-                }
-                else if (inputLine.startsWith("/demote ")) {
-                    if (isAdmin(username)) {
-                        String userToDemote = inputLine.substring(8).trim();
-                        demoteUser(userToDemote, username, out);
-                    } else {
-                        out.println("You do not have permission to demote users.");
-                    }
-                }
-                else if (inputLine.equals("/stats")) {
-                    if (isAdmin(username)) {
-                        displayServerStats(out);
-                    } else {
-                        out.println("You do not have permission to view server statistics.");
+                    else if (inputLine.equals("/stats")) {
+                        if (isAdmin(username)) {
+                            displayServerStats(out);
+                        } else {
+                            out.println("You do not have permission to view server statistics.");
+                        }
                     }
                 }
                 else {
@@ -385,7 +447,7 @@ public class Server {
                     // Note: We DO NOT remove the user from userCurrentRooms
                     // to maintain their state for reconnection
                     
-                    // Also, we don't remove the token to allow reconnections
+                    // Also, we don't remove the token in order to allow reconnections
                     System.out.println(username + " disconnected (may reconnect).");
                     
                     // We DO remove them from the active room participants
@@ -401,7 +463,7 @@ public class Server {
                 }
                 clientSocket.close();
             } catch (IOException e) {
-                e.printStackTrace();
+                System.out.println("Error in client cleanup: " + e.getMessage());
             }
         }
     }
@@ -415,6 +477,9 @@ public class Server {
                 userTokens.remove(username);
                 return null;
             }
+            // Refresh token expiration time when used for reconnection
+            token = Token.refreshToken(token);
+            userTokens.put(username, token);
             return token;
         }
         return null; // Token doesn't exist or doesn't match
