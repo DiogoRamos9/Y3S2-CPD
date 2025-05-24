@@ -267,6 +267,7 @@ public class Client {
             case "/help":
                 System.out.println("Available commands:");
                 System.out.println("/create <room_name> - Create a new chat room");
+                System.out.println("/create ai:<room_name>:<room_theme> - Create a new chat room with an AI chatbot");
                 System.out.println("/join <room_name> - Join an existing chat room");
                 System.out.println("/leave - Leave the current chat room and return to 'general'");
                 System.out.println("/rooms - List all available chat rooms");
