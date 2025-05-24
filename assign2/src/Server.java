@@ -3,7 +3,10 @@ import java.io.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.nio.charset.StandardCharsets;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
@@ -21,6 +24,8 @@ public class Server {
     private static final Map<String, List<String>> aiRoomHistory = new HashMap<>();
     private static final Map<String, Token> userTokens = new HashMap<>(); 
     private static final Map<String, String> userCurrentRooms = new HashMap<>();
+    private static final Map<String, List<String>> aiRoomBuffer = new ConcurrentHashMap<>();
+    private static final Map<String, AtomicBoolean> aiRoomBotBusy = new ConcurrentHashMap<>();
     
     private static final ReentrantLock userRoomsLock = new ReentrantLock();
     private static final ReentrantLock clientUsernamesLock = new ReentrantLock();
@@ -464,22 +469,21 @@ public class Server {
                             }
                         }
                         if (aiRoomPrompts.containsKey(currentRoom)) {
-                            List<String> history = aiRoomHistory.get(currentRoom);
-                            history.add(username + ": " + inputLine);
-                            String prompt = aiRoomPrompts.get(currentRoom);
-                            String context = prompt + "\n" + String.join("\n", history);
-                            String botReply = callLLM(context);
-                            history.add("Bot: " + botReply);
-                            for (Socket socket : chatRooms.get(currentRoom).keySet()) {
-                                Thread.startVirtualThread(() -> {
-                                    try {
-                                        new PrintWriter(socket.getOutputStream(), true)
-                                            .println("Bot: " + botReply);
-                                    } catch (Exception e) {
-                                        System.out.println("Error sending bot message to " + socket.getInetAddress());
-                                        e.printStackTrace();
-                                    }
-                                });
+                            // Buffer the message
+                            aiRoomBuffer.computeIfAbsent(currentRoom, k -> new ArrayList<>());
+
+                            List<String> buffer = aiRoomBuffer.get(currentRoom);
+                            synchronized (buffer) {
+                                buffer.add(username + ": " + inputLine);
+                            }
+
+                            // If bot is not busy, start processing
+                            aiRoomBotBusy.putIfAbsent(currentRoom, new AtomicBoolean(false));
+                            AtomicBoolean botBusy = aiRoomBotBusy.get(currentRoom);
+
+                            if (botBusy.compareAndSet(false, true)) {
+                                final String roomForBot = currentRoom;
+                                Thread.startVirtualThread(() -> processAiRoomBuffer(roomForBot));
                             }
                         }
                     } finally {
@@ -872,6 +876,57 @@ public class Server {
         } catch (Exception e) {
             e.printStackTrace();
             return "[AI Error: " + e.getMessage() + "]";
+        }
+    }
+
+    private static void processAiRoomBuffer(String roomName) {
+        while (true) {
+            List<String> buffer = aiRoomBuffer.get(roomName);
+            if (buffer == null) {
+                aiRoomBotBusy.get(roomName).set(false);
+                return;
+            }
+            List<String> toSend;
+            synchronized (buffer) {
+                if (buffer.isEmpty()) {
+                    aiRoomBotBusy.get(roomName).set(false);
+
+                    if (buffer.isEmpty()) {
+                        return;
+                    }
+                    if (aiRoomBotBusy.get(roomName).compareAndSet(false, true)) {
+                        continue;
+                    } else {
+                        return;
+                    }
+                }
+                toSend = new ArrayList<>(buffer);
+                buffer.clear();
+            }
+
+            String prompt = aiRoomPrompts.get(roomName);
+            String context = prompt + "\n" + String.join("\n", toSend);
+            String botReply = callLLM(context);
+
+            aiRoomHistory.get(roomName).addAll(toSend);
+            aiRoomHistory.get(roomName).add("Bot: " + botReply);
+
+            chatRoomsLock.lock();
+            try {
+                for (Socket socket : chatRooms.get(roomName).keySet()) {
+                    Thread.startVirtualThread(() -> {
+                        try {
+                            new PrintWriter(socket.getOutputStream(), true)
+                                .println("Bot: " + botReply);
+                        } catch (Exception e) {
+                            System.out.println("Error sending bot message to " + socket.getInetAddress());
+                            e.printStackTrace();
+                        }
+                    });
+                }
+            } finally {
+                chatRoomsLock.unlock();
+            }
         }
     }
 }
