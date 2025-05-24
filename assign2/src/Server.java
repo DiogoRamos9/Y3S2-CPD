@@ -11,6 +11,8 @@ import java.nio.charset.StandardCharsets;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLServerSocketFactory;
 import javax.net.ssl.SSLSocket;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Server {
     private static final int PORT = 8080;
@@ -864,13 +866,14 @@ public class Server {
                 }
             }
             String resp = response.toString();
-            int idx = resp.indexOf("\"response\":\"");
-            if (idx != -1) {
-                int start = idx + 12;
-                int end = resp.indexOf("\"", start);
-                if (end > start) {
-                    return resp.substring(start, end).replace("\\n", "\n");
-                }
+
+            Pattern pattern = Pattern.compile("\"response\":\"((?:[^\"\\\\]|\\\\.)*)\"");
+            Matcher matcher = pattern.matcher(resp);
+            if (matcher.find()) {
+                String raw = matcher.group(1);
+                // Unescape JSON string
+                String unescaped = raw.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\");
+                return unescaped;
             }
             return "[AI Error: Unexpected response]";
         } catch (Exception e) {
@@ -908,8 +911,11 @@ public class Server {
             String context = prompt + "\n" + String.join("\n", toSend);
             String botReply = callLLM(context);
 
+            // Remove all newlines from the bot's reply
+            final String finalBotReply = botReply.replace("\n", " ").replace("\r", " ");
+
             aiRoomHistory.get(roomName).addAll(toSend);
-            aiRoomHistory.get(roomName).add("Bot: " + botReply);
+            aiRoomHistory.get(roomName).add("Bot: " + finalBotReply);
 
             chatRoomsLock.lock();
             try {
@@ -917,7 +923,7 @@ public class Server {
                     Thread.startVirtualThread(() -> {
                         try {
                             new PrintWriter(socket.getOutputStream(), true)
-                                .println("Bot: " + botReply);
+                                .println("Bot: " + finalBotReply);
                         } catch (Exception e) {
                             System.out.println("Error sending bot message to " + socket.getInetAddress());
                             e.printStackTrace();
