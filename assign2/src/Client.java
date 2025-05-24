@@ -7,6 +7,7 @@ public class Client {
     private static Socket socket;
     private static boolean running = true;
     private static boolean connected = false;
+    private static boolean isExit = false;
     private static boolean voluntaryDisconnect = false;
     private static BufferedReader in;
     private static PrintWriter out;
@@ -51,6 +52,7 @@ public class Client {
                             currentRoom = message.substring(6).trim();
                         } else if (message.equals("/leave")) {
                             currentRoom = "general";
+                            System.out.print("\r" + user.getUsername() + ": ");
                         } else if (message.equals("/disconnect")) {
                             disconnectFromServer();
                             break;
@@ -232,7 +234,13 @@ public class Client {
             } catch (IOException e) {}
         }
         
-        System.out.println("Disconnected from server. Type anything to reconnect or 'quit' to exit.");
+        if (!isExit) {
+            System.out.println("Disconnected from server. Type anything to reconnect or 'quit' to exit.");
+        }
+        else {
+            isExit = false;
+        }
+        
     }
 
     private static void handleCommand(String command) {
@@ -245,6 +253,7 @@ public class Client {
             
             case "/exit":
                 running = false;
+                isExit = true;
                 disconnectFromServer();
                 break;
             
@@ -289,12 +298,6 @@ public class Client {
                     System.out.println("Token: " + user.getToken().getTokenString());
                     if (user.getToken().isExpired()) {
                         System.out.println("Token status: Expired");
-                    } else {
-                        long remainingMillis = user.getToken().getExpirationTime() - System.currentTimeMillis();
-                        java.time.LocalDateTime expirationDateTime = java.time.LocalDateTime.now().plus(java.time.Duration.ofMillis(remainingMillis));
-                        java.time.format.DateTimeFormatter formatter = java.time.format.DateTimeFormatter
-                            .ofPattern("yyyy-MM-dd HH:mm:ss");
-                        System.out.println("Token status: Valid until " + expirationDateTime.format(formatter));
                     }
                 }
                 break;

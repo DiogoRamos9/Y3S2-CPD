@@ -485,13 +485,22 @@ public class Server {
                 String username;
                 clientUsernamesLock.lock();
                 try {
-                    username = clientUsernames.remove(clientSocket);
+                    // Get username before removing from clientUsernames
+                    username = clientUsernames.get(clientSocket);
+                    
+                    // IMPORTANT: Don't remove from clientUsernames on disconnect
+                    // This allows proper reconnection with the same username
+                    if (username != null && !clientSocket.isClosed()) {
+                        clientUsernames.put(clientSocket, username);
+                    } else {
+                        clientUsernames.remove(clientSocket);
+                    }
                 } finally {
                     clientUsernamesLock.unlock();
                 }
                 
                 if (username != null) {
-                    // Note: We DO NOT remove the user from userCurrentRooms
+                    // Note: We do NOT remove the user from userCurrentRooms
                     // to maintain their state for reconnection
                     
                     // Also, we don't remove the token in order to allow reconnections
