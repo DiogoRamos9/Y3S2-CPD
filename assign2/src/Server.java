@@ -17,7 +17,6 @@ import java.util.regex.Pattern;
 public class Server {
     private static final int PORT = 8080;
     private static final String HOST = "0.0.0.0";
-    // private static ServerSocket serverSocket;
     private static SSLServerSocket serverSocket;
 
     private static final Map<Socket, String> clientUsernames = new HashMap<>();
@@ -471,7 +470,7 @@ public class Server {
                             }
                         }
                         if (aiRoomPrompts.containsKey(currentRoom)) {
-                            // Buffer the message
+    
                             aiRoomBuffer.computeIfAbsent(currentRoom, k -> new ArrayList<>());
 
                             List<String> buffer = aiRoomBuffer.get(currentRoom);
@@ -524,7 +523,6 @@ public class Server {
                     // We DO remove them from the active room participants
                     chatRoomsLock.lock();
                     try {
-                        // Try to find which room they're in and remove them
                         for (Map<Socket, String> room : chatRooms.values()) {
                             room.remove(clientSocket);
                         }
@@ -871,7 +869,7 @@ public class Server {
             Matcher matcher = pattern.matcher(resp);
             if (matcher.find()) {
                 String raw = matcher.group(1);
-                // Unescape JSON string
+
                 String unescaped = raw.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\");
                 return unescaped;
             }
@@ -911,7 +909,6 @@ public class Server {
             String context = prompt + "\n" + String.join("\n", toSend);
             String botReply = callLLM(context);
 
-            // Remove all newlines from the bot's reply
             final String finalBotReply = botReply.replace("\n", " ").replace("\r", " ");
 
             aiRoomHistory.get(roomName).addAll(toSend);
