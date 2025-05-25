@@ -327,7 +327,10 @@ public class Server {
                         }
                     }
                     else if (inputLine.startsWith("/create ")) {
-                        String roomSpec = inputLine.substring(8).trim();
+                        boolean isAIRoom = inputLine.startsWith("/create ai:");
+                        String roomSpec;
+                         if (isAIRoom) roomSpec = inputLine.split(":")[1].trim();
+                        else roomSpec = inputLine.substring(8).trim();
                         chatRoomsLock.lock();
                         try {
                             if (chatRooms.containsKey(roomSpec)) {
@@ -879,12 +882,12 @@ public class Server {
             adminOut.println("=== SERVER STATISTICS ===");
             adminOut.println("Total connected users: " + clientUsernames.size());
             adminOut.println("Total chat rooms: " + chatRooms.size());
-            adminOut.println("\nUsers per room:");
+            adminOut.println("Users per room:");
             for (Map.Entry<String, Map<Socket, String>> entry : chatRooms.entrySet()) {
                 adminOut.println("- " + entry.getKey() + ": " + entry.getValue().size() + " users");
             }
             List<String> mutedList = UserManager.getMutedUsersList();
-            adminOut.println("\nMuted users: " + mutedList.size());
+            adminOut.println("Muted users: " + mutedList.size());
             if (!mutedList.isEmpty()) {
                 for (String user : mutedList) {
                     adminOut.println("- " + user);
