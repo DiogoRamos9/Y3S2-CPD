@@ -6,7 +6,7 @@ import javax.net.ssl.SSLSocketFactory;
 public class Client {
     private static final int PORT = 8080;
     private static final String HOST = "127.0.0.1";
-    private static SSLSocket socket; // Changed from Socket to SSLSocket
+    private static SSLSocket socket;
     private static boolean running = true;
     private static boolean connected = false;
     private static boolean isExit = false;
@@ -147,10 +147,9 @@ public class Client {
                         
                         new Thread(() -> {
                             try {
-                                Thread.sleep(2000);  
                                 System.exit(0);  
-                            } catch (InterruptedException e) {
-                                Thread.currentThread().interrupt();
+                            } catch (Exception e) {
+                                System.out.println("Error during exit: " + e.getMessage());
                             }
                         }).start();
                         
@@ -354,32 +353,30 @@ public class Client {
             return;
         }
 
-        if (!authenticated) {
-            do {
-                System.out.println("1 - Login \n2 - Register");
-                String choice = System.console().readLine();
-                switch (choice) {
-                    case "1":
-                        if ((user = User.loginUser()) == null) {
-                            continue;
-                        } else {
-                            System.out.println("Login successful!");
-                            authenticated = true;
-                        }
-                        break;
-                    case "2":
-                        if ((user = User.registerUser()) == null) {
-                            System.out.println("Registration failed. Please try again.");
-                        } else {
-                            System.out.println("Registration successful!");
-                            authenticated = true;
-                        }
-                        break;
-                    default:
-                        System.out.println("Invalid option. Please try again.");
-                        break;
-                }
-            } while (!authenticated);
+        while (!authenticated) {
+            System.out.println("1 - Login \n2 - Register");
+            String choice = System.console().readLine();
+            switch (choice) {
+                case "1":
+                    if ((user = User.loginUser()) == null) {
+                        continue;
+                    } else {
+                        System.out.println("Login successful!");
+                        authenticated = true;
+                    }
+                    break;
+                case "2":
+                    if ((user = User.registerUser()) == null) {
+                        System.out.println("Registration failed. Please try again.");
+                    } else {
+                        System.out.println("Registration successful!");
+                        authenticated = true;
+                    }
+                    break;
+                default:
+                    System.out.println("Invalid option. Please try again.");
+                    break;
+            }
         }
     }
 }

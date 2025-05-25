@@ -50,10 +50,9 @@ public class Token {
     }
 
     public String toString() {
-        return "Token{" +
+        return "Token:" +
                 "username='" + username + '\'' +
                 ", token='" + token + '\'' +
-                ", expirationTime=" + expirationTime +
-                '}';
+                ", expirationTime=" + expirationTime;
     }
 }

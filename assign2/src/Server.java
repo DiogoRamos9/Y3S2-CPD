@@ -172,20 +172,30 @@ public class Server {
                     try {
                         if (userCurrentRooms.containsKey(username)) {
                             currentRoom = userCurrentRooms.get(username);
-                            // Verificar se a sala ainda existe no servidor
                             chatRoomsLock.lock();
                             try {
                                 if (!chatRooms.containsKey(currentRoom)) {
-                                    // Se a sala não existir mais, recriar (se não for AI)
                                     if (!currentRoom.equals("general") && !aiRoomPrompts.containsKey(currentRoom)) {
                                         chatRooms.put(currentRoom, new HashMap<>());
                                         System.out.println("Recreated room: " + currentRoom);
                                     } else {
-                                        // Se for uma sala AI que não existe mais, definir para general
                                         currentRoom = "general";
                                         userCurrentRooms.put(username, "general");
                                     }
                                 }
+
+                                chatRooms.get(currentRoom).put(clientSocket, username);
+                
+                                for (Socket socket : chatRooms.get(currentRoom).keySet()) {
+                                    if (!socket.equals(clientSocket)) {
+                                        try {
+                                            new PrintWriter(socket.getOutputStream(), true)
+                                                .println(username + " has reconnected to the room.");
+                                        } catch (IOException e) {}
+                                    }
+                                }
+                                
+                                out.println("You are now reconnected to room: " + currentRoom);
                             } finally {
                                 chatRoomsLock.unlock();
                             }
@@ -758,12 +768,6 @@ public class Server {
             } finally {
                 clientUsernamesLock.unlock();
             }
-
-            try {
-                Thread.sleep(1000); // Give time for the user to receive the ban message
-            } catch (InterruptedException ie) {
-                ie.printStackTrace();
-            }
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -775,14 +779,24 @@ public class Server {
         adminOut.println("User " + userToBan + " has been banned from the server.");
     }
 
-    private static void muteUser(String userToMute, String adminUsername, PrintWriter adminOut) {
-        if (UserManager.isUserMuted(userToMute)) {
-            adminOut.println("User " + userToMute + " is already muted.");
+    private static void muteUser(String userToMuteString, String adminUsername, PrintWriter adminOut) {
+        User user = UserManager.getUserByUsername(userToMuteString);
+        if (user == null) {
+            adminOut.println("User " + userToMuteString + " does not exist.");
             return;
         }
-        UserManager.muteUser(userToMute);
-        adminOut.println("User " + userToMute + " has been muted.");
-        Socket userSocket = findUserSocketByUsername(userToMute);
+        if (user.getRole().equals("admin")) {
+            adminOut.println("You cannot mute an admin user.");
+            return;
+        }
+        if (UserManager.isUserMuted(userToMuteString)) {
+            adminOut.println("User " + userToMuteString + " is already muted.");
+            return;
+        }
+
+        UserManager.muteUser(userToMuteString);
+        adminOut.println("User " + userToMuteString + " has been muted.");
+        Socket userSocket = findUserSocketByUsername(userToMuteString);
         if (userSocket != null) {
             try {
                 new PrintWriter(userSocket.getOutputStream(), true)
@@ -794,6 +808,15 @@ public class Server {
     }
 
     private static void unmuteUser(String userToUnmute, String adminUsername, PrintWriter adminOut) {
+        User user = UserManager.getUserByUsername(userToUnmute);
+        if (user == null) {
+            adminOut.println("User " + userToUnmute + " does not exist.");
+            return;
+        }
+        if (user.getRole().equals("admin")) {
+            adminOut.println("You cannot unmute an admin user.");
+            return;
+        }
         if (UserManager.isUserMuted(userToUnmute)) {
             UserManager.unmuteUser(userToUnmute);
             adminOut.println("User " + userToUnmute + " has been unmuted.");
