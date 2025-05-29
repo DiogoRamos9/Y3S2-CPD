@@ -68,7 +68,7 @@ public class User {
         String password = System.console().readLine();
         UserManager.addUser(username, password, "user");
         try (BufferedWriter bw = new BufferedWriter(new FileWriter("db/users.csv", true))) {
-            bw.write(username + "," + password);
+            bw.write(username + "," + password + ",user");
             bw.newLine();
         } catch (IOException e) {
             e.printStackTrace();
