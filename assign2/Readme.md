@@ -1,6 +1,4 @@
-# CPD Projects
-
-CPD Projects of group T11G12.
+# Chat Service Project
 
 Group members:
 
